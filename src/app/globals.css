@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+:root {
+	--bg-main: oklch(0.985 0.003 260);
+	--bg-surface: oklch(1 0 0);
+	--bg-sidebar: oklch(0.972 0.005 260);
+	--bg-hover: oklch(0.945 0.008 260);
+	--bg-accent: oklch(0.55 0.18 260);
+	--bg-accent-hover: oklch(0.5 0.18 260);
+	--bg-accent-subtle: oklch(0.93 0.04 260);
+	--bg-success: oklch(0.6 0.15 150);
+	--bg-success-subtle: oklch(0.95 0.04 150);
+	--bg-warning: oklch(0.7 0.15 85);
+	--bg-warning-subtle: oklch(0.96 0.04 85);
+	--bg-danger: oklch(0.6 0.15 25);
+	--bg-danger-subtle: oklch(0.96 0.04 25);
+	--bg-drag: oklch(0.93 0.04 260);
+
+	--text-primary: oklch(0.15 0.01 260);
+	--text-secondary: oklch(0.45 0.02 260);
+	--text-muted: oklch(0.6 0.02 260);
+	--text-inverse: oklch(1 0 0);
+	--text-accent: oklch(0.5 0.18 260);
+	--text-success: oklch(0.45 0.15 150);
+	--text-warning: oklch(0.55 0.15 85);
+	--text-danger: oklch(0.45 0.15 25);
+
+	--border-default: oklch(0.9 0.005 260);
+	--border-accent: oklch(0.55 0.18 260);
+
+	--shadow-sm: 0 1px 2px oklch(0 0 0 / 0.04);
+	--shadow-md: 0 2px 8px oklch(0 0 0 / 0.06);
+	--shadow-lg: 0 4px 16px oklch(0 0 0 / 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg-main: oklch(0.15 0.008 260);
+		--bg-surface: oklch(0.2 0.01 260);
+		--bg-sidebar: oklch(0.18 0.008 260);
+		--bg-hover: oklch(0.25 0.012 260);
+		--bg-accent: oklch(0.6 0.18 260);
+		--bg-accent-hover: oklch(0.55 0.18 260);
+		--bg-accent-subtle: oklch(0.25 0.04 260);
+		--bg-success-subtle: oklch(0.2 0.04 150);
+		--bg-warning-subtle: oklch(0.2 0.04 85);
+		--bg-danger-subtle: oklch(0.2 0.04 25);
+		--bg-drag: oklch(0.22 0.04 260);
+
+		--text-primary: oklch(0.92 0.008 260);
+		--text-secondary: oklch(0.7 0.01 260);
+		--text-muted: oklch(0.55 0.01 260);
+		--text-accent: oklch(0.65 0.18 260);
+
+		--border-default: oklch(0.3 0.01 260);
+		--border-accent: oklch(0.6 0.18 260);
+
+		--shadow-sm: 0 1px 2px oklch(0 0 0 / 0.2);
+		--shadow-md: 0 2px 8px oklch(0 0 0 / 0.3);
+		--shadow-lg: 0 4px 16px oklch(0 0 0 / 0.35);
+	}
+}
+
+* {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
+	background: var(--bg-main);
+	color: var(--text-primary);
+	overflow: hidden;
+	height: 100vh;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar for sidebar */
+.sidebar-scroll::-webkit-scrollbar {
+	width: 4px;
+}
+.sidebar-scroll::-webkit-scrollbar-track {
+	background: transparent;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+	background: var(--border-default);
+	border-radius: 99px;
+}
+
+/* Page content scrollbar */
+.page-scroll::-webkit-scrollbar {
+	width: 6px;
+}
+.page-scroll::-webkit-scrollbar-track {
+	background: transparent;
+}
+.page-scroll::-webkit-scrollbar-thumb {
+	background: var(--border-default);
+	border-radius: 99px;
+}
+
+/* Drag-over animation */
+@keyframes pulse-border {
+	0%,
+	100% {
+		border-color: var(--border-accent);
+	}
+	50% {
+		border-color: var(--bg-accent);
+	}
+}

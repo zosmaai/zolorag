@@ -1,21 +1,22 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
-	"productName": "zolo-rag",
+	"productName": "zoloRAG",
 	"version": "0.1.0",
-	"identifier": "com.zosmaai.zolo-rag",
+	"identifier": "com.zosmaai.zolorag",
 	"build": {
 		"beforeDevCommand": "pnpm dev",
-		"devUrl": "http://localhost:1420",
+		"devUrl": "http://localhost:3000",
 		"beforeBuildCommand": "pnpm build",
-		"frontendDist": "../dist"
+		"frontendDist": "../out"
 	},
 	"app": {
 		"withGlobalTauri": true,
 		"windows": [
 			{
-				"title": "zolo-rag",
-				"width": 800,
-				"height": 600
+				"title": "zoloRAG",
+				"width": 1100,
+				"height": 750,
+				"resizable": true
 			}
 		],
 		"security": {

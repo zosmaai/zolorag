@@ -4,9 +4,9 @@
 	"version": "0.1.0",
 	"type": "module",
 	"scripts": {
-		"dev": "vite",
-		"build": "tsc && vite build",
-		"preview": "vite preview",
+		"dev": "next dev",
+		"build": "next build",
+		"start": "next start",
 		"tauri": "tauri",
 		"prepare": "husky",
 		"lint": "biome check .",
@@ -21,13 +21,22 @@
 	},
 	"dependencies": {
 		"@tauri-apps/api": "^2",
-		"@tauri-apps/plugin-opener": "^2"
+		"@tauri-apps/plugin-dialog": "^2.7.1",
+		"@tauri-apps/plugin-opener": "^2",
+		"next": "^16.2.6",
+		"react": "^19.2.6",
+		"react-dom": "^19.2.6"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.15",
+		"@tailwindcss/postcss": "^4.3.0",
 		"@tauri-apps/cli": "^2",
+		"@types/node": "^25.9.1",
+		"@types/react": "^19.2.15",
+		"@types/react-dom": "^19.2.3",
 		"husky": "^9.1.7",
 		"lint-staged": "^17.0.5",
+		"tailwindcss": "^4.3.0",
 		"typescript": "~5.6.2",
 		"vite": "^6.0.3"
 	}

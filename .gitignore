@@ -1,4 +1,28 @@
-# Logs
+# --- Dependencies ---
+node_modules
+
+# --- Rust / Cargo ---
+target/
+
+# --- Next.js ---
+.next/
+out/
+next-env.d.ts
+
+# --- Build output ---
+dist
+dist-ssr
+*.tsbuildinfo
+
+# --- Environment files ---
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# --- Logs ---
 logs
 *.log
 npm-debug.log*
@@ -7,19 +31,28 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-package-lock.json
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
+# --- Editor ---
 .vscode/*
 !.vscode/extensions.json
 .idea
-.DS_Store
+*.swp
+*.swo
+*~
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- Package manager lockfiles (keep pnpm, ignore others) ---
+package-lock.json
+yarn.lock
+
+# Vendored/third-party JS files (excluded from biome check)
+.agents/skills/impeccable/scripts/modern-screenshot.umd.js
+.agents/skills/impeccable/scripts/live-browser.js
