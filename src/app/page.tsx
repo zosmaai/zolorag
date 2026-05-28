@@ -291,24 +291,12 @@ export default function Home() {
 				}}
 			>
 				<div className="flex items-center gap-3 min-w-0">
-					<div
-						className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-						style={{ background: "var(--bg-accent)" }}
-					>
-						<svg
-							width="18"
-							height="18"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="white"
-							strokeWidth="2.5"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-						>
-							<title>ZoloRAG</title>
-							<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-						</svg>
-					</div>
+					<img
+						src="/zolorag-logo.png"
+						alt="ZoloRAG"
+						className="w-9 h-9 shrink-0"
+						style={{ borderRadius: "var(--radius-md)" }}
+					/>
 					<div className="min-w-0">
 						<h1 className="text-base font-semibold tracking-tight truncate" style={{ color: "var(--text-primary)" }}>
 							ZoloRAG

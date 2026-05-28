@@ -1,0 +1,9 @@
+# Cross-compilation configuration
+# macOS → Windows (using mingw-w64)
+[target.x86_64-pc-windows-gnu]
+linker = "/opt/homebrew/bin/x86_64-w64-mingw32-gcc"
+ar = "/opt/homebrew/bin/x86_64-w64-mingw32-ar"
+
+# Optional: macOS → Linux (using cross-compilation toolchain)
+# [target.x86_64-unknown-linux-gnu]
+# linker = "x86_64-linux-gnu-gcc"
