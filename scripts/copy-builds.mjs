@@ -11,10 +11,9 @@
  *   node scripts/copy-builds.mjs linux
  */
 
-import { execSync } from "child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");

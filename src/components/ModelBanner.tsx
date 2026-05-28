@@ -1,6 +1,7 @@
 "use client";
 
 import { invoke } from "@tauri-apps/api/core";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { ModelStatus } from "@/types";
 
@@ -57,20 +58,7 @@ export default function ModelBanner({ onStatusChange }: ModelBannerProps) {
 				className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs"
 				style={{ background: "var(--bg-surface)", color: "var(--text-secondary)" }}
 			>
-				<svg
-					width="12"
-					height="12"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					strokeWidth="2.5"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-				>
-					<title>Ready</title>
-					<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-					<polyline points="22 4 12 14.01 9 11.01" />
-				</svg>
+				<CheckCircle2 size={12} strokeWidth={2.5} />
 				<span style={{ color: "var(--text-success)" }}>{status.message}</span>
 			</div>
 		);
@@ -84,21 +72,7 @@ export default function ModelBanner({ onStatusChange }: ModelBannerProps) {
 				color: "var(--text-warning, #92400e)",
 			}}
 		>
-			<svg
-				width="12"
-				height="12"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="2"
-				strokeLinecap="round"
-				strokeLinejoin="round"
-			>
-				<title>Warning</title>
-				<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-				<line x1="12" y1="9" x2="12" y2="13" />
-				<line x1="12" y1="17" x2="12.01" y2="17" />
-			</svg>
+			<AlertTriangle size={12} />
 			<span className="flex-1">{status.message}</span>
 			{!isPulling && (
 				<button

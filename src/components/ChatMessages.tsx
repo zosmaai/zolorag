@@ -1,6 +1,8 @@
 "use client";
 
+import { FileText, MessageCircle } from "lucide-react";
 import { useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
 import type { SearchResult } from "@/types";
 
 export interface ChatMessageItem {
@@ -54,30 +56,17 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 	if (messages.length === 0 && !isSearching) {
 		return (
 			<div className="flex-1 flex items-center justify-center" style={{ padding: "var(--space-10)" }}>
-				<div className="text-center" style={{ maxWidth: "420px" }}>
+				<div className="flex flex-col items-center gap-4 max-w-[420px]">
 					<div
-						className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
+						className="w-16 h-16 rounded-2xl flex items-center justify-center"
 						style={{ background: "var(--bg-accent-ghost)" }}
 					>
-						<svg
-							width="26"
-							height="26"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="1.8"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							style={{ color: "var(--text-accent)" }}
-						>
-							<title>Chat</title>
-							<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-						</svg>
+						<MessageCircle size={26} style={{ color: "var(--text-accent)" }} />
 					</div>
-					<p className="text-lg font-semibold mb-1.5" style={{ color: "var(--text-primary)" }}>
-						{currentDocName ? `Ask about ${currentDocName}` : "Drop a PDF to get started"}
+					<p className="text-lg font-semibold text-center" style={{ color: "var(--text-primary)" }}>
+						Welcome Tiramisu
 					</p>
-					<p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+					<p className="text-sm leading-relaxed text-center" style={{ color: "var(--text-secondary)" }}>
 						{currentDocName
 							? "Type a question below. I'll answer based on the document."
 							: "Load a document, then ask anything about it."}
@@ -114,7 +103,7 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 						{msg.type === "assistant_llm" && (
 							<div className="flex flex-col gap-2.5" style={{ paddingRight: "var(--space-16)" }}>
 								<div
-									className="text-sm leading-relaxed whitespace-pre-wrap"
+									className="text-sm leading-relaxed"
 									style={{
 										background: "var(--bg-surface)",
 										border: "1px solid var(--border-subtle)",
@@ -130,9 +119,16 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 											Thinking
 											<ThinkingDots />
 										</span>
-									) : (
-										msg.text || ""
-									)}
+									) : msg.text ? (
+										<ReactMarkdown
+											components={{
+												p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+												strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+											}}
+										>
+											{msg.text}
+										</ReactMarkdown>
+									) : null}
 								</div>
 
 								{/* Source page buttons — simple, no technical scores */}
@@ -152,20 +148,7 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 													padding: "5px 12px",
 												}}
 											>
-												<svg
-													width="10"
-													height="10"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													strokeWidth="2.5"
-													strokeLinecap="round"
-													strokeLinejoin="round"
-												>
-													<title>Page</title>
-													<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-													<polyline points="14 2 14 8 20 8" />
-												</svg>
+												<FileText size={10} strokeWidth={2.5} />
 												Page {source.page}
 											</button>
 										))}
@@ -202,20 +185,7 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 													color: "var(--text-accent)",
 												}}
 											>
-												<svg
-													width="10"
-													height="10"
-													viewBox="0 0 24 24"
-													fill="none"
-													stroke="currentColor"
-													strokeWidth="2.5"
-													strokeLinecap="round"
-													strokeLinejoin="round"
-												>
-													<title>Page</title>
-													<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-													<polyline points="14 2 14 8 20 8" />
-												</svg>
+												<FileText size={10} strokeWidth={2.5} />
 												Page {result.page}
 											</span>
 										</div>

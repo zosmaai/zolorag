@@ -2,7 +2,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Bot, CheckCircle2, Grid3x3, LoaderCircle, XCircle } from "lucide-react";
+import Image from "next/image";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 interface DownloadProgress {
 	downloaded: number;
@@ -19,7 +21,7 @@ function fmtSize(bytes: number): string {
 
 interface ModelRowProps {
 	label: string;
-	icon: string;
+	icon: ReactNode;
 	size: string;
 	state: "idle" | "checking" | "downloading" | "ready" | "error";
 	progress?: DownloadProgress;
@@ -50,7 +52,7 @@ function ModelRow({ label, icon, size, state, progress, error, onStart }: ModelR
 		>
 			<div className="flex items-start gap-3.5">
 				<div
-					className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-lg"
+					className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
 					style={{
 						background: state === "ready" ? "var(--bg-accent-subtle)" : "var(--bg-surface-raised)",
 						border: `1px solid ${state === "ready" ? "var(--border-accent-soft)" : "var(--border-subtle)"}`,
@@ -88,61 +90,21 @@ function ModelRow({ label, icon, size, state, progress, error, onStart }: ModelR
 
 						{state === "checking" && (
 							<div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--text-muted)" }}>
-								<svg
-									className="animate-spin-slow"
-									width="14"
-									height="14"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2.5"
-									strokeLinecap="round"
-									strokeLinejoin="round"
-								>
-									<title>Checking</title>
-									<path d="M21 12a9 9 0 1 1-6.219-8.56" />
-								</svg>
+								<LoaderCircle className="animate-spin-slow" size={14} strokeWidth={2.5} />
 								<span>Checking...</span>
 							</div>
 						)}
 
 						{state === "ready" && (
 							<div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--text-success)" }}>
-								<svg
-									width="14"
-									height="14"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2.5"
-									strokeLinecap="round"
-									strokeLinejoin="round"
-								>
-									<title>Ready</title>
-									<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-									<polyline points="22 4 12 14.01 9 11.01" />
-								</svg>
+								<CheckCircle2 size={14} strokeWidth={2.5} />
 								<span>Ready</span>
 							</div>
 						)}
 
 						{state === "error" && (
 							<div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--text-danger)" }}>
-								<svg
-									width="14"
-									height="14"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2"
-									strokeLinecap="round"
-									strokeLinejoin="round"
-								>
-									<title>Error</title>
-									<circle cx="12" cy="12" r="10" />
-									<line x1="15" y1="9" x2="9" y2="15" />
-									<line x1="9" y1="9" x2="15" y2="15" />
-								</svg>
+								<XCircle size={14} />
 								<span>Error</span>
 							</div>
 						)}
@@ -309,9 +271,11 @@ export default function SetupPanel({ onComplete }: SetupPanelProps) {
 				<div className="space-y-8">
 					{/* Logo + heading */}
 					<div className="text-center space-y-3">
-						<img
+						<Image
 							src="/zolorag-logo.png"
 							alt="ZoloRAG"
+							width={56}
+							height={56}
 							className="w-14 h-14 mx-auto"
 							style={{ borderRadius: "var(--radius-lg)" }}
 						/>
@@ -329,7 +293,7 @@ export default function SetupPanel({ onComplete }: SetupPanelProps) {
 					<div className="space-y-3.5">
 						<ModelRow
 							label="Embedding Model"
-							icon="📦"
+							icon={<Grid3x3 size={18} />}
 							size="~85 MB (all-MiniLM-L6-v2)"
 							state={embedState}
 							progress={embedProgress}
@@ -338,7 +302,7 @@ export default function SetupPanel({ onComplete }: SetupPanelProps) {
 						/>
 						<ModelRow
 							label="Language Model"
-							icon="🧠"
+							icon={<Bot size={18} />}
 							size="~1.8 GB (Llama 3.2 3B Q4)"
 							state={llmState}
 							progress={llmProgress}
@@ -358,20 +322,7 @@ export default function SetupPanel({ onComplete }: SetupPanelProps) {
 							}}
 						>
 							<div className="flex items-center justify-center gap-2">
-								<svg
-									width="16"
-									height="16"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2.5"
-									strokeLinecap="round"
-									strokeLinejoin="round"
-								>
-									<title>Ready</title>
-									<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-									<polyline points="22 4 12 14.01 9 11.01" />
-								</svg>
+								<CheckCircle2 size={16} strokeWidth={2.5} />
 								<span>All models ready! Drop a PDF or click &quot;Browse&quot; to start.</span>
 							</div>
 						</div>
