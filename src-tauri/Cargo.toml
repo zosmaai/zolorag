@@ -1,8 +1,8 @@
 [package]
 name = "zolo-rag"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Local PDF Chat — drag, drop, and ask questions about your documents."
+authors = ["Shanvit Shetty"]
 edition = "2021"
 default-run = "zolo-rag"
 

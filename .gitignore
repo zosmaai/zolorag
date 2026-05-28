@@ -13,6 +13,10 @@ next-env.d.ts
 dist
 dist-ssr
 *.tsbuildinfo
+builds/macos/*
+builds/windows/*
+builds/linux/*
+!builds/.gitkeep
 
 # --- Environment files ---
 .env

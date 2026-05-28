@@ -309,24 +309,12 @@ export default function SetupPanel({ onComplete }: SetupPanelProps) {
 				<div className="space-y-8">
 					{/* Logo + heading */}
 					<div className="text-center space-y-3">
-						<div
-							className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto"
-							style={{ background: "var(--bg-accent)" }}
-						>
-							<svg
-								width="26"
-								height="26"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="white"
-								strokeWidth="2.5"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-							>
-								<title>ZoloRAG</title>
-								<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-							</svg>
-						</div>
+						<img
+							src="/zolorag-logo.png"
+							alt="ZoloRAG"
+							className="w-14 h-14 mx-auto"
+							style={{ borderRadius: "var(--radius-lg)" }}
+						/>
 						<div>
 							<h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
 								Welcome to ZoloRAG
