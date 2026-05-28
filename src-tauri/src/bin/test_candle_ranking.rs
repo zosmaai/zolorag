@@ -57,11 +57,11 @@ fn main() -> Result<(), String> {
 
     // ── 4. Run queries ──
     let queries = vec![
-        "Shanvit Shetty",
+        "Jhon Doe",
         "person who built chatbot packages",
         "Who built the chatbot package?",
         "How many years of experience does Shanvit have?",
-        "Fullstack Engineer at Zosma AI",
+        "Fullstack Engineer at OpenAI",
         "Frontend Engineer",
         "Python programming",
         "Education and university",

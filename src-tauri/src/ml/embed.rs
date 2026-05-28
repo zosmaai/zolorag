@@ -5,13 +5,12 @@ use hf_hub::api::sync::Api;
 use tokenizers::Tokenizer;
 
 use crate::index::index::BitVector;
-use crate::index::encoder::EncodedVector;
+use crate::index::EncodedVector;
 
-/// In-process BERT-based encoder using candle (no Ollama dependency).
+/// In-process BERT-based encoder using candle.
 ///
 /// Loads `sentence-transformers/all-MiniLM-L6-v2` from HuggingFace Hub
-/// and runs the forward pass locally. Produces the same `EncodedVector`
-/// type as `OllamaEncoder`, making it a drop-in replacement.
+/// and runs the forward pass locally.
 pub struct CandleEncoder {
     model: BertModel,
     tokenizer: Tokenizer,
@@ -197,8 +196,6 @@ impl CandleEncoder {
     }
 
     /// Encode a single text → `EncodedVector` (bit vector + float vector).
-    ///
-    /// This is the drop-in replacement for `OllamaEncoder::encode()`.
     pub fn encode(&self, text: &str) -> Result<EncodedVector, String> {
         let floats = self.encode_text(text)?;
         let bit_vector = BitVector::from_float_slice(&floats);
@@ -209,8 +206,6 @@ impl CandleEncoder {
     }
 
     /// Encode multiple texts → `Vec<EncodedVector>`.
-    ///
-    /// Drop-in replacement for `OllamaEncoder::encode_batch()`.
     pub fn encode_batch(&self, texts: &[String]) -> Result<Vec<EncodedVector>, String> {
         texts.iter().map(|t| self.encode(t)).collect()
     }

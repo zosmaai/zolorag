@@ -26,7 +26,7 @@ impl Default for ContextBuilder {
 }
 
 impl ContextBuilder {
-    /// Build a list of messages for Ollama's `/api/chat` endpoint.
+    /// Build a list of messages for the `/api/chat` endpoint.
     ///
     /// Structure:
     /// 1. System message with instructions + context

@@ -137,6 +137,14 @@ impl TermIndex {
 // ChunkInfo / SearchResult
 // ---------------------------------------------------------------------------
 
+/// An encoded text: both the 384-dim float vector (for cosine rescoring)
+/// and the 384-bit binary vector (for fast Hamming search).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncodedVector {
+    pub bit_vector: BitVector,
+    pub float_vector: Vec<f32>,
+}
+
 /// Metadata about an indexed chunk (stored alongside the bit vector).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkInfo {
@@ -557,7 +565,7 @@ mod tests {
         let text_a = "Shanvit S Shetty Software Development Engineer";
         // Chunk about something unrelated (semantically similar but no name)
         let text_b = "SUMMARY Started with web apps now exploring ML LLMs and agentic workflows";
-        let text_c = "EXPERIENCE Fullstack Engineer at Zosma AI building frontend features";
+        let text_c = "EXPERIENCE Fullstack Engineer at OpenAI building frontend features";
 
         let chunks = [text_a, text_b, text_c];
         for (i, text) in chunks.iter().enumerate() {
@@ -591,7 +599,7 @@ mod tests {
         let semantic_results = index.search_semantic(&query, 3);
 
         // Hybrid: keyword boost pushes the name chunk to the top
-        let hybrid_results = index.search_hybrid(&query, &[], "Shanvit Shetty", 3);
+        let hybrid_results = index.search_hybrid(&query, &[], "Jhon Doe", 3);
 
         // The first result should be the name chunk
         assert_eq!(hybrid_results.len(), 3);
@@ -637,7 +645,7 @@ mod tests {
 
     #[test]
     fn test_tokenize_lowercases() {
-        let tokens = tokenize("Shanvit Shetty");
+        let tokens = tokenize("Jhon Doe");
         assert!(tokens.contains(&"shanvit".to_string()));
         assert!(tokens.contains(&"shetty".to_string()));
     }

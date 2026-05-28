@@ -13,7 +13,7 @@ use llama_cpp_2::sampling::LlamaSampler;
 /// In-process LLM engine using llama.cpp via Rust FFI.
 ///
 /// Loads a GGUF model file and generates tokens with streaming
-/// via a callback. Replaces the old `OllamaChatClient`.
+/// via a callback.
 ///
 /// Model loading is lazy: the model is loaded in `new()` and kept
 /// alive for the lifetime of the engine. Contexts are created

@@ -1,62 +1,34 @@
-//! # Phase 4 Validation Suite (The "Reality Test")
+//! # Embedding Validation Suite
 //!
-//! These integration tests compare `CandleEncoder` outputs with `OllamaEncoder`
-//! outputs to verify that the in-process BERT model produces equivalent search
-//! quality.
+//! Self-contained integration tests for `CandleEncoder` that verify:
 //!
-//! ## Prerequisites
-//!
-//! - Ollama running on localhost:11434 with `all-minilm` model pulled
-//! - Internet access (first run downloads the candle model via hf-hub)
-//! - A sample PDF indexed with both encoders
+//! - The model loads successfully from cache
+//! - Encoding produces deterministic outputs (same text → same vector)
+//! - Cosine similarity between related texts is higher than unrelated texts
+//! - Bit vectors have reasonable entropy (~50% bits set)
 //!
 //! ## Usage
 //!
 //! ```bash
-//! # Run all validation tests (skips if Ollama is unavailable)
+//! # Run all validation tests (downloads model if not cached)
 //! cargo test --test validation -- --ignored
 //!
 //! # Run with output
 //! cargo test --test validation -- --ignored --nocapture
 //! ```
-//!
-//! ## Test 1: Bit-Level Agreement
-//!
-//! Encode the same 100 sentences through both Ollama and Candle. Compare bit vectors.
-//!
-//! | Metric | Target |
-//! |--------|--------|
-//! | Bit agreement | ≥ 95% |
-//! | Bit vector equality | ≥ 80% |
-//!
-//! ## Test 2: Ranking Consistency
-//!
-//! Build two indexes from the same chunks, run queries, compare top-5 results.
-//!
-//! | Metric | Target |
-//! |--------|--------|
-//! | Top-1 overlap | ≥ 90% |
-//! | Top-5 overlap | ≥ 80% |
-//! | Score correlation | ≥ 0.85 |
-//!
-//! ## Test 3: Regression Check on Known Queries
-//!
-//! Verify known queries return expected top results.
 
 use std::sync::OnceLock;
 
 use hf_hub::api::sync::Api;
-use zolo_rag_lib::index::encoder::OllamaEncoder;
 use zolo_rag_lib::ml::CandleEncoder;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// 100 diverse sentences for comparing Ollama vs Candle embeddings.
-/// Covers various topics to ensure broad agreement.
+/// 100 diverse sentences for testing embedding consistency.
 const TEST_SENTENCES: &[&str] = &[
-    "Shanvit S Shetty",
+    "John Doe",
     "Software Development Engineer",
     "Building a RAG system with Rust and Tauri",
     "The quick brown fox jumps over the lazy dog",
@@ -160,21 +132,12 @@ const TEST_SENTENCES: &[&str] = &[
     "The marine biology expedition studied coral reefs",
 ];
 
-/// Check if Ollama is reachable on localhost:11434.
-fn ollama_available() -> bool {
-    std::net::TcpStream::connect_timeout(
-        &"127.0.0.1:11434".parse().unwrap(),
-        std::time::Duration::from_secs(2),
-    )
-    .is_ok()
-}
-
 /// Check if the candle embedding model is cached locally.
 fn candle_model_cached() -> bool {
     zolo_rag_lib::ml::download::is_embedding_model_cached()
 }
 
-/// Lazy singleton for the CandleEncoder (loaded once).
+/// Ensure the model is downloaded, then return a cached CandleEncoder.
 fn get_candle_encoder() -> Option<&'static CandleEncoder> {
     static CANDLE: OnceLock<Option<CandleEncoder>> = OnceLock::new();
     CANDLE.get_or_init(|| {
@@ -208,18 +171,13 @@ fn get_candle_encoder() -> Option<&'static CandleEncoder> {
 }
 
 // ---------------------------------------------------------------------------
-// Test 1: Bit-Level Agreement
+// Test 1: Deterministic Output
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "Requires Ollama and Candle model; run with -- --ignored"]
-fn test_bit_level_agreement() {
+#[ignore = "Requires Candle model; run with -- --ignored"]
+fn test_deterministic_output() {
     let _ = env_logger::try_init();
-
-    if !ollama_available() {
-        eprintln!("SKIP: Ollama not available");
-        return;
-    }
 
     let candle = match get_candle_encoder() {
         Some(e) => e,
@@ -229,67 +187,35 @@ fn test_bit_level_agreement() {
         }
     };
 
-    let ollama = OllamaEncoder::new();
-
-    let mut total_bit_agreement = 0.0;
-    let mut exact_matches = 0;
-    let count = TEST_SENTENCES.len();
-
+    let mut all_deterministic = true;
     for sentence in TEST_SENTENCES {
-        let candle_vec = candle.encode(sentence).expect("Candle encode failed");
-        let ollama_vec = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(ollama.encode(sentence))
-            .expect("Ollama encode failed");
+        let a = candle.encode(sentence).expect("First encode failed");
+        let b = candle.encode(sentence).expect("Second encode failed");
 
-        // Bit agreement: fraction of bits that match
-        let agreement = candle_vec.bit_vector.similarity(&ollama_vec.bit_vector);
-        total_bit_agreement += agreement;
-
-        // Exact bit vector equality
-        let hamming = candle_vec.bit_vector.hamming_distance(&ollama_vec.bit_vector);
-        if hamming == 0 {
-            exact_matches += 1;
+        let hamming = a.bit_vector.hamming_distance(&b.bit_vector);
+        if hamming != 0 {
+            eprintln!(
+                "  FAIL: \"{sentence}\" differs from itself ({hamming} bits flipped)"
+            );
+            all_deterministic = false;
         }
     }
 
-    let avg_agreement = total_bit_agreement / count as f32;
-    let match_ratio = exact_matches as f32 / count as f32;
-
-    println!("\n─── Test 1: Bit-Level Agreement ───");
-    println!("  Sentences encoded:  {count}");
-    println!("  Avg bit agreement:  {:.2}%", avg_agreement * 100.0);
-    println!("  Exact matches:      {exact_matches}/{count} ({:.1}%)", match_ratio * 100.0);
-
-    // Targets from Phase 4 doc
     assert!(
-        avg_agreement >= 0.90,
-        "Bit agreement too low: {:.2}% (target ≥ 90%)",
-        avg_agreement * 100.0
+        all_deterministic,
+        "CandleEncoder produced non-deterministic outputs"
     );
-    // Bit agreement ≥ 95% target, but we're lenient at 90% for initial validation
-    println!("  ✅ Bit agreement ≥ 90% (target 95%)");
-
-    if avg_agreement >= 0.95 {
-        println!("  ✅ Meets Phase 4 target of ≥ 95%!");
-    } else {
-        println!("  ⚠️  Below 95% target — investigate tokenizer/variance");
-    }
+    println!("  ✅ All {} encodings are deterministic", TEST_SENTENCES.len());
 }
 
 // ---------------------------------------------------------------------------
-// Test 2: Score Correlation
+// Test 2: Entropy Check — Bit Balance
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "Requires Ollama and Candle model; run with -- --ignored"]
-fn test_score_correlation() {
+#[ignore = "Requires Candle model; run with -- --ignored"]
+fn test_bit_entropy() {
     let _ = env_logger::try_init();
-
-    if !ollama_available() {
-        eprintln!("SKIP: Ollama not available");
-        return;
-    }
 
     let candle = match get_candle_encoder() {
         Some(e) => e,
@@ -299,66 +225,36 @@ fn test_score_correlation() {
         }
     };
 
-    let ollama = OllamaEncoder::new();
-
-    // Compute cosine similarity between Ollama and Candle float vectors
-    let mut cosine_sum = 0.0;
-    let count = TEST_SENTENCES.len();
+    let mut total_pos_bits = 0;
+    let total_bits = TEST_SENTENCES.len() * 384;
 
     for sentence in TEST_SENTENCES {
-        let candle_vec = candle.encode(sentence).expect("Candle encode failed");
-        let ollama_vec = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(ollama.encode(sentence))
-            .expect("Ollama encode failed");
-
-        // Cosine similarity between the float vectors
-        let dot: f32 = candle_vec
-            .float_vector
-            .iter()
-            .zip(ollama_vec.float_vector.iter())
-            .map(|(a, b)| a * b)
-            .sum();
-        let na: f32 = candle_vec.float_vector.iter().map(|x| x * x).sum();
-        let nb: f32 = ollama_vec.float_vector.iter().map(|x| x * x).sum();
-        let cosine = if na == 0.0 || nb == 0.0 {
-            0.0
-        } else {
-            dot / (na.sqrt() * nb.sqrt())
-        };
-        cosine_sum += cosine;
+        let vec = candle.encode(sentence).expect("Encode failed");
+        let pos = vec.float_vector.iter().filter(|v| **v > 0.0).count();
+        total_pos_bits += pos;
     }
 
-    let avg_cosine = cosine_sum / count as f32;
-    // Clamp to [0, 1] for display
-    let avg_cosine = avg_cosine.clamp(0.0, 1.0);
+    let ratio = total_pos_bits as f64 / total_bits as f64;
+    println!("\n─── Bit Entropy ───");
+    println!("  Positive bits: {total_pos_bits}/{total_bits} ({:.1}%)", ratio * 100.0);
 
-    println!("\n─── Test 2: Float Vector Cosine Correlation ───");
-    println!("  Sentences encoded:  {count}");
-    println!("  Avg cosine sim:     {:.4}", avg_cosine);
-
-    // Cosine similarity should be very high (same model, same weights)
+    // Expect roughly half the bits to be set (good entropy)
     assert!(
-        avg_cosine > 0.95,
-        "Cosine similarity too low: {:.4} (expected > 0.95)",
-        avg_cosine
+        (0.30..=0.70).contains(&ratio),
+        "Bit balance {:.1}% outside expected range (30-70%)",
+        ratio * 100.0
     );
-    println!("  ✅ Cosine similarity > 0.95 (excellent agreement)");
+    println!("  ✅ Bit balance within expected range (30-70%)");
 }
 
 // ---------------------------------------------------------------------------
-// Test 3: Regression Check — Known Query Patterns
+// Test 3: Semantic Similarity Plausibility
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "Requires Ollama and Candle model; run with -- --ignored"]
-fn test_known_query_regression() {
+#[ignore = "Requires Candle model; run with -- --ignored"]
+fn test_semantic_plausibility() {
     let _ = env_logger::try_init();
-
-    if !ollama_available() {
-        eprintln!("SKIP: Ollama not available");
-        return;
-    }
 
     let candle = match get_candle_encoder() {
         Some(e) => e,
@@ -368,47 +264,67 @@ fn test_known_query_regression() {
         }
     };
 
-    let ollama = OllamaEncoder::new();
-
-    // Test that specific queries produce similar embeddings
-    let queries = [
-        ("Shanvit Shetty", "Contact/Name query"),
-        ("person who built chatbot packages", "Side Projects query"),
-        ("refund policy", "Refund policy query"),
+    // Pairs of sentences that should be semantically related
+    let related_pairs: &[(&str, &str)] = &[
+        ("John Doe", "Software Development Engineer"),
+        ("Machine learning models", "Neural networks are inspired by the human brain"),
+        ("Data structures are fundamental", "Computer science concepts"),
+        ("The weather today is sunny", "Climate and temperature patterns"),
+        ("Open source software", "Version control systems help developers"),
+        ("Refund policy allows returns", "Customer service and returns"),
+        ("Memory safety is a key feature of Rust", "Zero-cost abstractions are a hallmark of Rust"),
+        ("The marathon runners trained", "The basketball team won the championship"),
     ];
 
-    println!("\n─── Test 3: Known Query Regression ───");
+    // Pairs that should be less related (random control)
+    let unrelated_pairs: &[(&str, &str)] = &[
+        ("Refund policy allows returns", "The symphony orchestra performed Beethoven's Fifth"),
+        ("Memory safety in Rust", "The cooking class taught Italian recipes"),
+        ("The space telescope captured nebulae", "Quantum computing promises exponential speedup"),
+        ("Version control systems", "The botanical textbook covers plant taxonomy"),
+    ];
 
-    for (query, label) in &queries {
-        let candle_vec = candle.encode(query).expect("Candle encode failed");
-        let ollama_vec = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(ollama.encode(query))
-            .expect("Ollama encode failed");
+    println!("\n─── Semantic Plausibility ───");
 
-        let cosine = cosine_sim(
-            &candle_vec.float_vector,
-            &ollama_vec.float_vector,
-        );
-
-        let bit_agreement = candle_vec.bit_vector.similarity(&ollama_vec.bit_vector);
-
-        println!("  {label}: \"{query}\"");
-        println!("    Cosine sim:    {cosine:.4}");
-        println!("    Bit agreement: {:.2}%", bit_agreement * 100.0);
-
-        assert!(
-            cosine > 0.90,
-            "Cosine similarity too low for '{query}': {cosine:.4}",
-        );
-        assert!(
-            bit_agreement > 0.80,
-            "Bit agreement too low for '{query}': {:.2}%",
-            bit_agreement * 100.0
-        );
+    // Compute average cosine for related pairs
+    let mut related_cosines = Vec::new();
+    for (a, b) in related_pairs {
+        let va = candle.encode(a).expect("Encode failed");
+        let vb = candle.encode(b).expect("Encode failed");
+        let cosine = cosine_sim(&va.float_vector, &vb.float_vector);
+        related_cosines.push(cosine);
+        println!("  Related: \"{a}\" ↔ \"{b}\" → {cosine:.4}");
     }
+    let avg_related = related_cosines.iter().sum::<f32>() / related_cosines.len() as f32;
 
-    println!("  ✅ All known queries pass regression check");
+    // Compute average cosine for unrelated pairs
+    let mut unrelated_cosines = Vec::new();
+    for (a, b) in unrelated_pairs {
+        let va = candle.encode(a).expect("Encode failed");
+        let vb = candle.encode(b).expect("Encode failed");
+        let cosine = cosine_sim(&va.float_vector, &vb.float_vector);
+        unrelated_cosines.push(cosine);
+        println!("  Unrelated: \"{a}\" ↔ \"{b}\" → {cosine:.4}");
+    }
+    let avg_unrelated = unrelated_cosines.iter().sum::<f32>() / unrelated_cosines.len() as f32;
+
+    println!("\n  Avg related cosine:   {avg_related:.4}");
+    println!("  Avg unrelated cosine: {avg_unrelated:.4}");
+
+    assert!(
+        avg_related > avg_unrelated,
+        "Related pairs ({avg_related:.4}) should have higher cosine than unrelated ({avg_unrelated:.4})",
+    );
+    assert!(
+        avg_related > 0.3,
+        "Related cosine {avg_related:.4} too low",
+    );
+    assert!(
+        avg_unrelated < 0.6,
+        "Unrelated cosine {avg_unrelated:.4} too high (should be near zero)",
+    );
+
+    println!("  ✅ Semantic plausibility check passed");
 }
 
 // ---------------------------------------------------------------------------
