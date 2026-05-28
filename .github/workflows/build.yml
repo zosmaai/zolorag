@@ -35,14 +35,49 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Build Tauri (macOS)
-        run: pnpm tauri build --bundles dmg --no-sign
+      - name: Build Tauri app bundle (macOS, unsigned)
+        run: pnpm tauri build --no-bundle --no-sign
+
+      - name: Ad-hoc sign the app bundle
+        run: |
+          APP_PATH="src-tauri/target/release/bundle/macos/ZoloRAG.app"
+          if [ -d "$APP_PATH" ]; then
+            echo "Ad-hoc signing $APP_PATH..."
+            codesign --force --deep --verify --verbose -s - "$APP_PATH"
+            codesign --verify --verbose=4 "$APP_PATH"
+          else
+            echo "App not found at $APP_PATH"
+            ls -la src-tauri/target/release/bundle/ 2>/dev/null || true
+            exit 1
+          fi
+
+      - name: Package into DMG
+        run: |
+          APP_PATH="src-tauri/target/release/bundle/macos/ZoloRAG.app"
+          DMG_DIR="src-tauri/target/release/bundle/dmg"
+          mkdir -p "$DMG_DIR"
+          DMG_PATH="$DMG_DIR/ZoloRAG_0.1.0_aarch64.dmg"
+          
+          # Create temporary directory for DMG contents
+          TMP_DMG="/tmp/ZoloRAG_dmg"
+          mkdir -p "$TMP_DMG"
+          cp -R "$APP_PATH" "$TMP_DMG/"
+          ln -s /Applications "$TMP_DMG/Applications"
+          
+          # Create the DMG
+          hdiutil create -volname "ZoloRAG" -srcfolder "$TMP_DMG" \
+            -ov -format UDZO -imagekey zlib-level=9 "$DMG_PATH"
+          
+          rm -rf "$TMP_DMG"
+          echo "DMG created at: $DMG_PATH"
+          ls -lh "$DMG_PATH"
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
           name: ZoloRAG-macOS
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          path: src-tauri/target/release/bundle/dmg/ZoloRAG_0.1.0_aarch64.dmg
+          compression-level: 0
 
   # ── Windows ──
   build-windows:
