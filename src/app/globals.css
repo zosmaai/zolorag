@@ -1,66 +1,85 @@
+/* ───────────────────────────────────────────
+   ZoloRAG — Design System
+   Font: Chakra Petch (loaded via next/font)
+   Primary: #017cf3
+   Text: black-tinted neutrals
+   BG: white-tinted neutrals
+   ─────────────────────────────────────────── */
+
 @import "tailwindcss";
 
+@theme {
+	--font-chakra: "Chakra Petch", "Inter", system-ui, sans-serif;
+}
+
 :root {
-	--bg-main: oklch(0.985 0.003 260);
+	/* ── Brand ── */
+	--color-primary: #017cf3;
+	--color-primary-rgb: 1, 124, 243;
+
+	/* ── Backgrounds — white-based, tinted toward brand blue ── */
+	--bg-main: oklch(0.995 0.002 255);
 	--bg-surface: oklch(1 0 0);
-	--bg-sidebar: oklch(0.972 0.005 260);
-	--bg-hover: oklch(0.945 0.008 260);
-	--bg-accent: oklch(0.55 0.18 260);
-	--bg-accent-hover: oklch(0.5 0.18 260);
-	--bg-accent-subtle: oklch(0.93 0.04 260);
-	--bg-success: oklch(0.6 0.15 150);
+	--bg-surface-raised: oklch(0.99 0.003 255);
+	--bg-sidebar: oklch(0.985 0.004 255);
+	--bg-hover: oklch(0.965 0.006 255);
+	--bg-accent: #017cf3;
+	--bg-accent-hover: #0168d6;
+	--bg-accent-subtle: oklch(0.93 0.055 255);
+	--bg-accent-ghost: oklch(0.96 0.035 255);
+	--bg-success: oklch(0.55 0.18 150);
 	--bg-success-subtle: oklch(0.95 0.04 150);
-	--bg-warning: oklch(0.7 0.15 85);
-	--bg-warning-subtle: oklch(0.96 0.04 85);
-	--bg-danger: oklch(0.6 0.15 25);
+	--bg-warning: oklch(0.68 0.16 85);
+	--bg-warning-subtle: oklch(0.97 0.04 85);
+	--bg-danger: oklch(0.55 0.18 25);
 	--bg-danger-subtle: oklch(0.96 0.04 25);
-	--bg-drag: oklch(0.93 0.04 260);
+	--bg-drag: oklch(0.94 0.05 255);
+	--bg-skeleton: oklch(0.93 0.01 255);
 
-	--text-primary: oklch(0.15 0.01 260);
-	--text-secondary: oklch(0.45 0.02 260);
-	--text-muted: oklch(0.6 0.02 260);
+	/* ── Text — black secondary as requested, with subtle tint ── */
+	--text-primary: oklch(0.1 0.006 255);
+	--text-secondary: oklch(0.18 0.008 255);
+	--text-muted: oklch(0.42 0.012 255);
 	--text-inverse: oklch(1 0 0);
-	--text-accent: oklch(0.5 0.18 260);
-	--text-success: oklch(0.45 0.15 150);
-	--text-warning: oklch(0.55 0.15 85);
-	--text-danger: oklch(0.45 0.15 25);
+	--text-accent: #017cf3;
+	--text-success: oklch(0.4 0.18 150);
+	--text-warning: oklch(0.5 0.16 85);
+	--text-danger: oklch(0.4 0.18 25);
 
-	--border-default: oklch(0.9 0.005 260);
-	--border-accent: oklch(0.55 0.18 260);
+	/* ── Borders ── */
+	--border-default: oklch(0.88 0.005 255);
+	--border-subtle: oklch(0.93 0.004 255);
+	--border-accent: var(--color-primary);
+	--border-accent-soft: oklch(0.85 0.06 255);
 
-	--shadow-sm: 0 1px 2px oklch(0 0 0 / 0.04);
-	--shadow-md: 0 2px 8px oklch(0 0 0 / 0.06);
-	--shadow-lg: 0 4px 16px oklch(0 0 0 / 0.08);
+	/* ── Shadows — softer, brand-tinted ── */
+	--shadow-xs: 0 1px 2px oklch(0 0 0 / 0.03);
+	--shadow-sm: 0 1px 3px oklch(0 0 0 / 0.05), 0 1px 2px oklch(0 0 0 / 0.04);
+	--shadow-md: 0 4px 12px oklch(0 0 0 / 0.06);
+	--shadow-lg: 0 8px 24px oklch(0 0 0 / 0.08);
+	--shadow-xl: 0 12px 36px oklch(0 0 0 / 0.1);
+
+	/* ── Radii ── */
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 14px;
+	--radius-xl: 18px;
+	--radius-2xl: 24px;
+
+	/* ── Spacing scale ── */
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 20px;
+	--space-6: 24px;
+	--space-8: 32px;
+	--space-10: 40px;
+	--space-12: 48px;
+	--space-16: 64px;
 }
 
-@media (prefers-color-scheme: dark) {
-	:root {
-		--bg-main: oklch(0.15 0.008 260);
-		--bg-surface: oklch(0.2 0.01 260);
-		--bg-sidebar: oklch(0.18 0.008 260);
-		--bg-hover: oklch(0.25 0.012 260);
-		--bg-accent: oklch(0.6 0.18 260);
-		--bg-accent-hover: oklch(0.55 0.18 260);
-		--bg-accent-subtle: oklch(0.25 0.04 260);
-		--bg-success-subtle: oklch(0.2 0.04 150);
-		--bg-warning-subtle: oklch(0.2 0.04 85);
-		--bg-danger-subtle: oklch(0.2 0.04 25);
-		--bg-drag: oklch(0.22 0.04 260);
-
-		--text-primary: oklch(0.92 0.008 260);
-		--text-secondary: oklch(0.7 0.01 260);
-		--text-muted: oklch(0.55 0.01 260);
-		--text-accent: oklch(0.65 0.18 260);
-
-		--border-default: oklch(0.3 0.01 260);
-		--border-accent: oklch(0.6 0.18 260);
-
-		--shadow-sm: 0 1px 2px oklch(0 0 0 / 0.2);
-		--shadow-md: 0 2px 8px oklch(0 0 0 / 0.3);
-		--shadow-lg: 0 4px 16px oklch(0 0 0 / 0.35);
-	}
-}
-
+/* ── Base styles ── */
 * {
 	margin: 0;
 	padding: 0;
@@ -68,18 +87,20 @@
 }
 
 body {
-	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", system-ui, sans-serif;
+	font-family: var(--font-chakra), system-ui, sans-serif;
 	background: var(--bg-main);
 	color: var(--text-primary);
 	overflow: hidden;
 	height: 100vh;
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
+	line-height: 1.5;
 }
 
-/* Default thin scrollbar */
+/* ── Scrollbar ── */
 ::-webkit-scrollbar {
 	width: 6px;
+	height: 6px;
 }
 ::-webkit-scrollbar-track {
 	background: transparent;
@@ -87,9 +108,19 @@ body {
 ::-webkit-scrollbar-thumb {
 	background: var(--border-default);
 	border-radius: 99px;
+	transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: var(--text-muted);
 }
 
-/* Source panel slide-in */
+/* ── Selection ── */
+::selection {
+	background: var(--bg-accent-subtle);
+	color: var(--text-primary);
+}
+
+/* ── Animations ── */
 @keyframes slide-in {
 	from {
 		transform: translateX(100%);
@@ -101,10 +132,9 @@ body {
 	}
 }
 .animate-slide-in {
-	animation: slide-in 0.2s ease-out;
+	animation: slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Drag-over animation */
 @keyframes pulse-border {
 	0%,
 	100% {
@@ -113,4 +143,96 @@ body {
 	50% {
 		border-color: var(--bg-accent);
 	}
+}
+
+@keyframes fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+.animate-fade-in {
+	animation: fade-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes spin-slow {
+	to {
+		transform: rotate(360deg);
+	}
+}
+.animate-spin-slow {
+	animation: spin-slow 1.5s linear infinite;
+}
+
+/* ── Skeleton loading shimmer ── */
+@keyframes skeleton-shimmer {
+	0% {
+		background-position: -200% 0;
+	}
+	100% {
+		background-position: 200% 0;
+	}
+}
+
+.skeleton-line {
+	height: 12px;
+	border-radius: 6px;
+	background: linear-gradient(90deg, var(--bg-skeleton) 25%, var(--bg-hover) 50%, var(--bg-skeleton) 75%);
+	background-size: 200% 100%;
+	animation: skeleton-shimmer 1.8s ease-in-out infinite;
+}
+
+.skeleton-avatar {
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	background: linear-gradient(90deg, var(--bg-skeleton) 25%, var(--bg-hover) 50%, var(--bg-skeleton) 75%);
+	background-size: 200% 100%;
+	animation: skeleton-shimmer 1.8s ease-in-out infinite;
+}
+
+/* ── Indexing progress bar animation ── */
+@keyframes index-progress {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(400%);
+	}
+}
+
+.indexing-bar {
+	position: relative;
+	overflow: hidden;
+}
+.indexing-bar::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	width: 25%;
+	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+	animation: index-progress 1.5s ease-in-out infinite;
+}
+
+/* ── Focus ring (disabled — user requested zero borders/outlines) ── */
+:focus-visible {
+	outline: none;
+}
+
+/* ── Cursor blink for streaming ── */
+@keyframes blink {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0;
+	}
+}
+.cursor-blink {
+	animation: blink 0.8s step-end infinite;
 }

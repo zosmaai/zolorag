@@ -198,16 +198,14 @@ pub fn is_embedding_model_cached() -> bool {
         return false;
     }
 
-    let has_safetensors = std::fs::read_dir(&snapshots_dir)
+    std::fs::read_dir(&snapshots_dir)
         .map(|entries| {
             entries.filter_map(|e| e.ok()).any(|e| {
                 let snap = e.path();
                 snap.is_dir() && snap.join("model.safetensors").exists()
             })
         })
-        .unwrap_or(false);
-
-    has_safetensors
+        .unwrap_or(false)
 }
 
 #[cfg(test)]

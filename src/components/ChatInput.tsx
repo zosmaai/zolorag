@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useRef } from "react";
+import { type FormEvent, useRef, useState } from "react";
 
 interface ChatInputProps {
 	onSend: (query: string) => void;
@@ -14,6 +14,7 @@ export default function ChatInput({
 	placeholder = "Ask a question about your document...",
 }: ChatInputProps) {
 	const inputRef = useRef<HTMLInputElement>(null);
+	const [focused, setFocused] = useState(false);
 
 	const handleSubmit = (e: FormEvent) => {
 		e.preventDefault();
@@ -24,13 +25,14 @@ export default function ChatInput({
 	};
 
 	return (
-		<form onSubmit={handleSubmit} className="w-full">
+		<form onSubmit={handleSubmit}>
 			<div
-				className="flex items-center gap-2 px-4 py-3 rounded-xl transition-all duration-150"
+				className="flex items-center gap-2 transition-all duration-200"
 				style={{
-					background: "var(--bg-surface)",
-					border: "1px solid var(--border-default)",
-					boxShadow: "var(--shadow-sm)",
+					background: focused ? "var(--bg-surface-raised)" : "var(--bg-surface)",
+					borderRadius: "var(--radius-lg)",
+					boxShadow: focused ? "var(--shadow-sm)" : "var(--shadow-xs)",
+					padding: "8px 8px 8px 20px",
 				}}
 			>
 				<input
@@ -38,21 +40,34 @@ export default function ChatInput({
 					type="text"
 					placeholder={placeholder}
 					disabled={disabled}
-					className="flex-1 bg-transparent outline-none text-sm"
-					style={{ color: "var(--text-primary)" }}
+					onFocus={() => setFocused(true)}
+					onBlur={() => setFocused(false)}
+					className="flex-1 bg-transparent min-w-0"
+					style={{
+						color: "var(--text-primary)",
+						fontFamily: "var(--font-chakra), system-ui, sans-serif",
+						fontSize: "15px",
+						lineHeight: "1.5",
+						outline: "none",
+						boxShadow: "none",
+					}}
 				/>
 				<button
 					type="submit"
 					disabled={disabled}
-					className="flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-150 disabled:opacity-30"
+					className="flex items-center justify-center transition-all duration-150 disabled:opacity-25 disabled:cursor-not-allowed active:scale-95"
 					style={{
+						width: "38px",
+						height: "38px",
 						background: disabled ? "transparent" : "var(--bg-accent)",
 						color: "white",
+						borderRadius: "var(--radius-md)",
+						outline: "none",
 					}}
 				>
 					<svg
-						width="14"
-						height="14"
+						width="16"
+						height="16"
 						viewBox="0 0 24 24"
 						fill="none"
 						stroke="currentColor"

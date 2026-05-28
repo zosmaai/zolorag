@@ -1,6 +1,6 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
-	"productName": "zoloRAG",
+	"productName": "ZoloRAG",
 	"version": "0.1.0",
 	"identifier": "com.zosmaai.zolorag",
 	"build": {
@@ -13,7 +13,7 @@
 		"withGlobalTauri": true,
 		"windows": [
 			{
-				"title": "zoloRAG",
+				"title": "ZoloRAG",
 				"width": 1100,
 				"height": 750,
 				"resizable": true

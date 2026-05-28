@@ -33,18 +33,35 @@ function ModelRow({ label, icon, size, state, progress, error, onStart }: ModelR
 
 	return (
 		<div
-			className="rounded-xl p-4 border"
+			className="transition-all duration-200"
 			style={{
 				background: "var(--bg-surface)",
-				borderColor: state === "ready" ? "var(--border-success, #22c55e40)" : "var(--border-default)",
+				border: `1px solid ${
+					state === "ready"
+						? "var(--border-accent-soft)"
+						: state === "error"
+							? "var(--bg-danger-subtle)"
+							: "var(--border-default)"
+				}`,
+				borderRadius: "var(--radius-lg)",
+				padding: "var(--space-5)",
+				boxShadow: state === "ready" ? "var(--shadow-sm)" : "var(--shadow-xs)",
 			}}
 		>
-			<div className="flex items-start gap-3">
-				<span className="text-xl mt-0.5">{icon}</span>
+			<div className="flex items-start gap-3.5">
+				<div
+					className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-lg"
+					style={{
+						background: state === "ready" ? "var(--bg-accent-subtle)" : "var(--bg-surface-raised)",
+						border: `1px solid ${state === "ready" ? "var(--border-accent-soft)" : "var(--border-subtle)"}`,
+					}}
+				>
+					{icon}
+				</div>
 				<div className="flex-1 min-w-0">
-					<div className="flex items-center justify-between gap-2">
-						<div>
-							<p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+					<div className="flex items-center justify-between gap-3">
+						<div className="min-w-0">
+							<p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
 								{label}
 							</p>
 							<p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
@@ -57,25 +74,43 @@ function ModelRow({ label, icon, size, state, progress, error, onStart }: ModelR
 							<button
 								type="button"
 								onClick={onStart}
-								className="px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-opacity hover:opacity-80"
-								style={{ background: "var(--bg-accent)", color: "white" }}
+								className="text-xs font-semibold whitespace-nowrap transition-all duration-150 hover:opacity-90 active:scale-95"
+								style={{
+									background: "var(--bg-accent)",
+									color: "white",
+									padding: "7px 16px",
+									borderRadius: "var(--radius-md)",
+								}}
 							>
 								Download
 							</button>
 						)}
 
 						{state === "checking" && (
-							<div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
-								<div className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+							<div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+								<svg
+									className="animate-spin-slow"
+									width="14"
+									height="14"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2.5"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+								>
+									<title>Checking</title>
+									<path d="M21 12a9 9 0 1 1-6.219-8.56" />
+								</svg>
 								<span>Checking...</span>
 							</div>
 						)}
 
 						{state === "ready" && (
-							<div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-success, #22c55e)" }}>
+							<div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--text-success)" }}>
 								<svg
-									width="12"
-									height="12"
+									width="14"
+									height="14"
 									viewBox="0 0 24 24"
 									fill="none"
 									stroke="currentColor"
@@ -92,21 +127,36 @@ function ModelRow({ label, icon, size, state, progress, error, onStart }: ModelR
 						)}
 
 						{state === "error" && (
-							<div className="text-xs" style={{ color: "var(--text-danger, #ef4444)" }}>
-								Error
+							<div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: "var(--text-danger)" }}>
+								<svg
+									width="14"
+									height="14"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+								>
+									<title>Error</title>
+									<circle cx="12" cy="12" r="10" />
+									<line x1="15" y1="9" x2="9" y2="15" />
+									<line x1="9" y1="9" x2="15" y2="15" />
+								</svg>
+								<span>Error</span>
 							</div>
 						)}
 					</div>
 
 					{/* Progress bar */}
 					{(state === "downloading" || state === "checking") && (
-						<div className="mt-3 space-y-1">
+						<div className="mt-4 space-y-1.5">
 							<div
 								className="w-full h-2 rounded-full overflow-hidden"
-								style={{ background: "var(--bg-input, #e5e7eb)" }}
+								style={{ background: "var(--bg-surface-raised)" }}
 							>
 								<div
-									className="h-full rounded-full transition-all duration-300 ease-out"
+									className="h-full rounded-full transition-all duration-500 ease-out"
 									style={{
 										width: `${state === "checking" ? 5 : Math.max(5, pct)}%`,
 										background: "var(--bg-accent)",
@@ -114,7 +164,7 @@ function ModelRow({ label, icon, size, state, progress, error, onStart }: ModelR
 								/>
 							</div>
 							{progress && state === "downloading" && (
-								<p className="text-xs" style={{ color: "var(--text-muted)" }}>
+								<p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
 									{fmtSize(progress.downloaded)} / {fmtSize(progress.total)} ({pct}%)
 								</p>
 							)}
@@ -123,7 +173,7 @@ function ModelRow({ label, icon, size, state, progress, error, onStart }: ModelR
 
 					{/* Error message */}
 					{state === "error" && error && (
-						<p className="text-xs mt-1" style={{ color: "var(--text-danger, #ef4444)" }}>
+						<p className="text-xs mt-2 leading-relaxed" style={{ color: "var(--text-danger)" }}>
 							{error}
 						</p>
 					)}
@@ -254,75 +304,96 @@ export default function SetupPanel({ onComplete }: SetupPanelProps) {
 	const allReady = embedState === "ready" && llmState === "ready";
 
 	return (
-		<div className="flex items-center justify-center p-8 min-h-full">
-			<div className="w-full max-w-md space-y-6">
-				{/* Logo + heading */}
-				<div className="text-center space-y-2">
-					<div
-						className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto"
-						style={{ background: "var(--bg-accent)" }}
-					>
-						<svg
-							width="24"
-							height="24"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="white"
-							strokeWidth="2.5"
-							strokeLinecap="round"
-							strokeLinejoin="round"
+		<div className="flex items-center justify-center min-h-full" style={{ padding: "var(--space-10)" }}>
+			<div className="w-full" style={{ maxWidth: "480px" }}>
+				<div className="space-y-8">
+					{/* Logo + heading */}
+					<div className="text-center space-y-3">
+						<div
+							className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto"
+							style={{ background: "var(--bg-accent)" }}
 						>
-							<title>zoloRAG</title>
-							<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-						</svg>
+							<svg
+								width="26"
+								height="26"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="white"
+								strokeWidth="2.5"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							>
+								<title>ZoloRAG</title>
+								<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+							</svg>
+						</div>
+						<div>
+							<h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-primary)" }}>
+								Welcome to ZoloRAG
+							</h1>
+							<p className="text-sm mt-2 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+								Download the required models to get started. Everything runs locally — no data leaves your machine.
+							</p>
+						</div>
 					</div>
-					<h1 className="text-xl font-bold" style={{ color: "var(--text-primary)" }}>
-						Welcome to zoloRAG
-					</h1>
-					<p className="text-sm" style={{ color: "var(--text-muted)" }}>
-						Download the required models to get started. Everything runs locally — no data leaves your machine.
+
+					{/* Model cards */}
+					<div className="space-y-3.5">
+						<ModelRow
+							label="Embedding Model"
+							icon="📦"
+							size="~85 MB (all-MiniLM-L6-v2)"
+							state={embedState}
+							progress={embedProgress}
+							error={embedError}
+							onStart={startEmbed}
+						/>
+						<ModelRow
+							label="Language Model"
+							icon="🧠"
+							size="~1.8 GB (Llama 3.2 3B Q4)"
+							state={llmState}
+							progress={llmProgress}
+							error={llmError}
+							onStart={startLlm}
+						/>
+					</div>
+
+					{/* Getting started hint */}
+					{allReady && (
+						<div
+							className="text-center text-sm font-semibold py-3.5 px-5 rounded-xl animate-fade-in"
+							style={{
+								background: "var(--bg-accent-subtle)",
+								color: "var(--text-accent)",
+								border: "1px solid var(--border-accent-soft)",
+							}}
+						>
+							<div className="flex items-center justify-center gap-2">
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									strokeWidth="2.5"
+									strokeLinecap="round"
+									strokeLinejoin="round"
+								>
+									<title>Ready</title>
+									<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+									<polyline points="22 4 12 14.01 9 11.01" />
+								</svg>
+								<span>All models ready! Drop a PDF or click &quot;Browse&quot; to start.</span>
+							</div>
+						</div>
+					)}
+
+					{/* Version info */}
+					<p className="text-center text-xs" style={{ color: "var(--text-muted)" }}>
+						ZoloRAG v0.1.0 &middot; Fully offline RAG
 					</p>
 				</div>
-
-				{/* Model cards */}
-				<div className="space-y-3">
-					<ModelRow
-						label="Embedding Model"
-						icon="📦"
-						size="~85 MB (all-MiniLM-L6-v2)"
-						state={embedState}
-						progress={embedProgress}
-						error={embedError}
-						onStart={startEmbed}
-					/>
-					<ModelRow
-						label="Language Model"
-						icon="🧠"
-						size="~1.8 GB (Llama 3.2 3B Q4)"
-						state={llmState}
-						progress={llmProgress}
-						error={llmError}
-						onStart={startLlm}
-					/>
-				</div>
-
-				{/* Getting started hint */}
-				{allReady && (
-					<div
-						className="text-center text-sm py-3 px-4 rounded-xl animate-pulse"
-						style={{
-							background: "var(--bg-accent-subtle)",
-							color: "var(--text-accent)",
-						}}
-					>
-						✅ All models ready! Drop a PDF or click &quot;Browse&quot; to start.
-					</div>
-				)}
-
-				{/* Version info */}
-				<p className="text-center text-xs" style={{ color: "var(--text-muted)" }}>
-					zoloRAG v0.1.0 — Fully offline RAG
-				</p>
 			</div>
 		</div>
 	);

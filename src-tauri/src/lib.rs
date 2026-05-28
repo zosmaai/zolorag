@@ -356,7 +356,7 @@ async fn ask_question(
 
     // 1. Encode query using candle encoder (auto-loads if needed)
     let encoded = encode_with_auto_load(&app, &state, &query)
-        .map_err(|e| { let _ = app.emit("rag:error", e.clone()); e })?;
+        .inspect_err(|e| { let _ = app.emit("rag:error", e.clone()); })?;
 
     // 2. Retrieve chunks
     let bit_index = state

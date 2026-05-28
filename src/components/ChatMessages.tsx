@@ -21,35 +21,51 @@ interface ChatMessagesProps {
 	currentDocName?: string;
 }
 
-function formatScore(score: number): string {
-	return `${(score * 100).toFixed(0)}%`;
+/** Bouncing dots animation */
+function ThinkingDots() {
+	return (
+		<span className="inline-flex items-center gap-[3px] ml-1">
+			<span
+				className="w-[5px] h-[5px] rounded-full animate-bounce"
+				style={{ background: "var(--text-accent)", animationDelay: "0s" }}
+			/>
+			<span
+				className="w-[5px] h-[5px] rounded-full animate-bounce"
+				style={{ background: "var(--text-accent)", animationDelay: "0.15s" }}
+			/>
+			<span
+				className="w-[5px] h-[5px] rounded-full animate-bounce"
+				style={{ background: "var(--text-accent)", animationDelay: "0.3s" }}
+			/>
+		</span>
+	);
 }
 
 export default function ChatMessages({ messages, isSearching, onResultClick, currentDocName }: ChatMessagesProps) {
 	const bottomRef = useRef<HTMLDivElement>(null);
 
-	// Auto-scroll to bottom when messages change
-	// biome-ignore lint/correctness/useExhaustiveDependencies: ref doesn't track message count
+	// Auto-scroll to bottom
+	// biome-ignore lint/correctness/useExhaustiveDependencies: we want to scroll when messages change
 	useEffect(() => {
 		bottomRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages]);
 
-	// Welcome message when no conversation yet
+	// Welcome state — no messages yet
 	if (messages.length === 0 && !isSearching) {
 		return (
-			<div className="flex-1 flex items-center justify-center p-8">
-				<div className="text-center max-w-sm">
+			<div className="flex-1 flex items-center justify-center" style={{ padding: "var(--space-10)" }}>
+				<div className="text-center" style={{ maxWidth: "420px" }}>
 					<div
-						className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-4"
-						style={{ background: "var(--bg-accent-subtle)" }}
+						className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
+						style={{ background: "var(--bg-accent-ghost)" }}
 					>
 						<svg
-							width="20"
-							height="20"
+							width="26"
+							height="26"
 							viewBox="0 0 24 24"
 							fill="none"
 							stroke="currentColor"
-							strokeWidth="2"
+							strokeWidth="1.8"
 							strokeLinecap="round"
 							strokeLinejoin="round"
 							style={{ color: "var(--text-accent)" }}
@@ -58,12 +74,12 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 							<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
 						</svg>
 					</div>
-					<p className="text-sm font-medium mb-1" style={{ color: "var(--text-primary)" }}>
-						{currentDocName ? `Ask questions about ${currentDocName}` : "Drop a PDF to get started"}
+					<p className="text-lg font-semibold mb-1.5" style={{ color: "var(--text-primary)" }}>
+						{currentDocName ? `Ask about ${currentDocName}` : "Drop a PDF to get started"}
 					</p>
-					<p className="text-xs" style={{ color: "var(--text-muted)" }}>
+					<p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
 						{currentDocName
-							? "Type a question below. The AI will answer based on the document."
+							? "Type a question below. I'll answer based on the document."
 							: "Load a document, then ask anything about it."}
 					</p>
 				</div>
@@ -72,18 +88,21 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 	}
 
 	return (
-		<div className="flex-1 overflow-y-auto px-1">
-			<div className="flex flex-col gap-4 py-4 max-w-3xl mx-auto">
+		<div className="flex-1 overflow-y-auto" style={{ padding: "var(--space-4) var(--space-5)" }}>
+			<div className="flex flex-col gap-5">
 				{messages.map((msg) => (
-					<div key={msg.id}>
-						{/* User message */}
+					<div key={msg.id} className="animate-fade-in">
+						{/* ── User message ── */}
 						{msg.type === "user" && msg.query && (
-							<div className="flex justify-end mb-1">
+							<div className="flex justify-end" style={{ paddingLeft: "var(--space-16)" }}>
 								<div
-									className="rounded-2xl px-4 py-2.5 max-w-[75%] text-sm leading-relaxed"
+									className="text-sm leading-relaxed font-medium"
 									style={{
-										background: "var(--bg-accent-subtle)",
-										color: "var(--text-primary)",
+										background: "var(--bg-accent)",
+										color: "white",
+										borderRadius: "18px 18px 4px 18px",
+										padding: "12px 20px",
+										maxWidth: "65%",
 									}}
 								>
 									{msg.query}
@@ -91,44 +110,51 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 							</div>
 						)}
 
-						{/* Assistant message (LLM answer) */}
+						{/* ── Assistant message ── */}
 						{msg.type === "assistant_llm" && (
-							<div className="flex flex-col gap-2 mt-2">
+							<div className="flex flex-col gap-2.5" style={{ paddingRight: "var(--space-16)" }}>
 								<div
-									className="rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap"
+									className="text-sm leading-relaxed whitespace-pre-wrap"
 									style={{
 										background: "var(--bg-surface)",
-										border: "1px solid var(--border-default)",
+										border: "1px solid var(--border-subtle)",
+										borderRadius: "var(--radius-lg)",
 										color: "var(--text-primary)",
+										padding: "16px 20px",
+										boxShadow: "var(--shadow-xs)",
 									}}
 								>
-									{msg.text || ""}
-									{msg.isStreaming && (
-										<span
-											className="inline-block w-1.5 h-4 ml-0.5 animate-pulse"
-											style={{ background: "var(--text-accent)" }}
-										/>
+									{/* Show thinking indicator while streaming with no text yet */}
+									{msg.isStreaming && !msg.text ? (
+										<span className="flex items-center gap-1.5" style={{ color: "var(--text-muted)" }}>
+											Thinking
+											<ThinkingDots />
+										</span>
+									) : (
+										msg.text || ""
 									)}
 								</div>
 
-								{/* Source citations (shown after streaming completes) */}
+								{/* Source page buttons — simple, no technical scores */}
 								{!msg.isStreaming && msg.sources && msg.sources.length > 0 && (
-									<div className="flex flex-wrap gap-1.5 px-1">
+									<div className="flex flex-wrap gap-2">
 										{msg.sources.map((source) => (
 											<button
 												type="button"
 												key={source.chunk_id}
 												onClick={() => onResultClick(source)}
-												className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-colors hover:opacity-80"
+												className="inline-flex items-center gap-1.5 text-xs font-medium transition-all duration-150 hover:opacity-80 active:scale-95"
 												style={{
 													background: "var(--bg-accent-subtle)",
 													color: "var(--text-accent)",
-													border: "1px solid var(--border-accent)",
+													border: "1px solid var(--border-accent-soft)",
+													borderRadius: "var(--radius-lg)",
+													padding: "5px 12px",
 												}}
 											>
 												<svg
-													width="9"
-													height="9"
+													width="10"
+													height="10"
 													viewBox="0 0 24 24"
 													fill="none"
 													stroke="currentColor"
@@ -141,7 +167,6 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 													<polyline points="14 2 14 8 20 8" />
 												</svg>
 												Page {source.page}
-												<span style={{ opacity: 0.6 }}>{formatScore(source.score)}</span>
 											</button>
 										))}
 									</div>
@@ -149,27 +174,29 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 							</div>
 						)}
 
-						{/* Legacy: Phase 2 search results (keep for backward compat) */}
+						{/* ── Legacy search results ── */}
 						{msg.type === "assistant" && msg.results && msg.results.length > 0 && (
-							<div className="flex flex-col gap-2 mt-2">
-								<p className="text-xs font-medium px-1" style={{ color: "var(--text-muted)" }}>
-									Results for "{msg.query}"
+							<div className="flex flex-col gap-2">
+								<p className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+									Results for &ldquo;{msg.query}&rdquo;
 								</p>
 								{msg.results.map((result) => (
 									<button
 										type="button"
 										key={result.chunk_id}
 										onClick={() => onResultClick(result)}
-										className="w-full text-left rounded-xl p-3.5 transition-all duration-150 hover:opacity-85 active:scale-[0.99]"
+										className="w-full text-left transition-all duration-150 hover:opacity-85 active:scale-[0.99]"
 										style={{
 											background: "var(--bg-surface)",
-											border: "1px solid var(--border-default)",
-											boxShadow: "var(--shadow-sm)",
+											border: "1px solid var(--border-subtle)",
+											borderRadius: "var(--radius-md)",
+											boxShadow: "var(--shadow-xs)",
+											padding: "14px 16px",
 										}}
 									>
-										<div className="flex items-center justify-between gap-2 mb-1.5">
+										<div className="flex items-center gap-2 mb-2">
 											<span
-												className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium"
+												className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold"
 												style={{
 													background: "var(--bg-accent-subtle)",
 													color: "var(--text-accent)",
@@ -191,9 +218,6 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 												</svg>
 												Page {result.page}
 											</span>
-											<span className="text-[11px] font-mono font-semibold" style={{ color: "var(--text-muted)" }}>
-												{formatScore(result.score)} match
-											</span>
 										</div>
 										<p className="text-sm leading-relaxed line-clamp-3" style={{ color: "var(--text-secondary)" }}>
 											{result.text}
@@ -205,34 +229,23 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 
 						{/* Assistant message with no results */}
 						{msg.type === "assistant" && msg.results && msg.results.length === 0 && (
-							<div className="flex justify-start mt-2">
+							<div className="flex justify-start">
 								<div
-									className="rounded-2xl px-4 py-2.5 text-sm"
+									className="text-sm"
 									style={{
 										background: "var(--bg-surface)",
-										border: "1px solid var(--border-default)",
+										border: "1px solid var(--border-subtle)",
+										borderRadius: "var(--radius-lg)",
 										color: "var(--text-secondary)",
+										padding: "14px 18px",
 									}}
 								>
-									No relevant matches found for "{msg.query}".
+									No relevant matches found for &ldquo;{msg.query}&rdquo;.
 								</div>
 							</div>
 						)}
 					</div>
 				))}
-
-				{/* Searching/generating indicator */}
-				{isSearching && (
-					<div className="flex items-center gap-2 px-1 py-2">
-						<div
-							className="w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin"
-							style={{ color: "var(--text-muted)" }}
-						/>
-						<span className="text-sm" style={{ color: "var(--text-muted)" }}>
-							Generating answer...
-						</span>
-					</div>
-				)}
 
 				<div ref={bottomRef} />
 			</div>

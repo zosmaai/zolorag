@@ -1,6 +1,5 @@
 use crate::index::SearchResult;
 use crate::rag::chat::{ChatMessage, Role};
-use serde_json::Value;
 
 /// Assembles LLM messages from query + chunks + history.
 pub struct ContextBuilder {
@@ -26,58 +25,6 @@ impl Default for ContextBuilder {
 }
 
 impl ContextBuilder {
-    /// Build a list of messages for the `/api/chat` endpoint.
-    ///
-    /// Structure:
-    /// 1. System message with instructions + context
-    /// 2. Recent chat history (last N turns, excluding the current query)
-    /// 3. Current user query
-    pub fn build_messages(
-        &self,
-        query: &str,
-        chunks: &[SearchResult],
-        history: &[ChatMessage],
-    ) -> Vec<Value> {
-        let mut messages: Vec<Value> = Vec::new();
-
-        // --- 1. System + context ---
-        let context_str = self.format_context(chunks);
-        let system_content = if context_str.is_empty() {
-            self.system_prompt.clone()
-        } else {
-            format!("{}\n\nContext:\n{}", self.system_prompt, context_str)
-        };
-        messages.push(serde_json::json!({
-            "role": "system",
-            "content": system_content,
-        }));
-
-        // --- 2. Chat history (skip system, skip the last user message if it matches query) ---
-        // We include recent history for follow-up context
-        for msg in history.iter() {
-            // Skip messages that are the same as the current query to avoid duplication
-            if matches!(msg.role, Role::User) && msg.content == query {
-                continue;
-            }
-            let role_str = match msg.role {
-                Role::User => "user",
-                Role::Assistant => "assistant",
-            };
-            messages.push(serde_json::json!({
-                "role": role_str,
-                "content": msg.content,
-            }));
-        }
-
-        // --- 3. Current query ---
-        messages.push(serde_json::json!({
-            "role": "user",
-            "content": query,
-        }));
-
-        messages
-    }
-
     /// Build a single prompt string for llama.cpp (in-process LLM).
     ///
     /// Uses the Llama 3 instruct chat template format:

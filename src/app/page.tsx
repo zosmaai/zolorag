@@ -17,66 +17,47 @@ function nextId(): string {
 }
 
 export default function Home() {
-	// Document state (single doc at a time)
 	const [currentDoc, setCurrentDoc] = useState<PdfDocument | null>(null);
-	const [statusMessage, setStatusMessage] = useState("");
-
-	// Setup state — shown until both models are ready
 	const [setupComplete, setSetupComplete] = useState(false);
-
-	// Phase 2 state
 	const [modelReady, setModelReady] = useState(false);
 	const [llmReady, setLlmReady] = useState(false);
 	const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [isIndexing, setIsIndexing] = useState(false);
-
-	// Chat state
 	const [messages, setMessages] = useState<ChatMessageItem[]>([]);
-
-	// Source panel
 	const [sourcePage, setSourcePage] = useState<number | null>(null);
-
-	// Ref for the current streaming message ID (updated without re-renders)
 	const streamingIdRef = useRef<string | null>(null);
 
 	const hasDocument = currentDoc !== null;
 	const canAsk = modelReady && indexStatus !== null && indexStatus.indexed_chunks > 0 && llmReady;
 
 	// -----------------------------------------------------------------------
-	// Helper: add a welcome message after loading a doc
-	// -----------------------------------------------------------------------
-	const addWelcomeMessage = useCallback((doc: PdfDocument, chunkCount: number) => {
+	const addWelcomeMessage = useCallback((doc: PdfDocument) => {
 		setMessages([
 			{
 				id: nextId(),
 				type: "assistant_llm",
 				query: "",
-				text: `📄 **${doc.file_name}** loaded (${doc.total_pages} pages, ${chunkCount} chunks indexed). Ask a question to get started!`,
+				text: `📄 **${doc.file_name}** ready! Ask me anything about it.`,
 				sources: [],
 				isStreaming: false,
 				timestamp: Date.now(),
 			},
 		]);
-		setStatusMessage(`${doc.file_name} — ${chunkCount} chunks indexed`);
 	}, []);
 
-	// -----------------------------------------------------------------------
-	// Index after PDF load
 	// -----------------------------------------------------------------------
 	const triggerIndexAndWelcome = useCallback(
 		(doc: PdfDocument) => {
 			setIsIndexing(true);
-			setStatusMessage("Indexing document...");
 			invoke<{ doc_count: number; chunk_count: number; index_path: string }>("index_document")
-				.then(async (summary) => {
+				.then(async () => {
 					const istatus = await invoke<IndexStatus>("get_index_status");
 					setIndexStatus(istatus);
-					addWelcomeMessage(doc, summary.chunk_count);
+					addWelcomeMessage(doc);
 				})
 				.catch((err: unknown) => {
 					console.warn("Auto-index failed:", err);
-					setStatusMessage(`Indexing failed: ${err}`);
 				})
 				.finally(() => setIsIndexing(false));
 		},
@@ -84,11 +65,8 @@ export default function Home() {
 	);
 
 	// -----------------------------------------------------------------------
-	// Load PDF
-	// -----------------------------------------------------------------------
 	const loadPdfByPath = useCallback(
 		async (path: string) => {
-			setStatusMessage(`Loading ${path.split("/").pop() || path}...`);
 			setMessages([]);
 			setSourcePage(null);
 			setIndexStatus(null);
@@ -99,13 +77,12 @@ export default function Home() {
 				if (modelReady) {
 					triggerIndexAndWelcome(doc);
 				} else {
-					setStatusMessage(`${doc.file_name} loaded. Waiting for embedding model to index...`);
 					setMessages([
 						{
 							id: nextId(),
 							type: "assistant_llm",
 							query: "",
-							text: `📄 ${doc.file_name} loaded. Model not ready yet — search will activate once the embedding model is available.`,
+							text: `📄 ${doc.file_name} loaded. Give me a moment to finish setting up...`,
 							sources: [],
 							isStreaming: false,
 							timestamp: Date.now(),
@@ -113,13 +90,12 @@ export default function Home() {
 					]);
 				}
 			} catch (err) {
-				setStatusMessage(`Error: ${err}`);
+				console.warn("Load failed:", err);
 			}
 		},
 		[modelReady, triggerIndexAndWelcome],
 	);
 
-	// Also trigger index when model becomes ready with a pending doc
 	const pendingIndexRef = useRef(false);
 	useEffect(() => {
 		if (modelReady && currentDoc && !indexStatus && !pendingIndexRef.current && !isIndexing) {
@@ -128,15 +104,12 @@ export default function Home() {
 		}
 	}, [modelReady, currentDoc, indexStatus, isIndexing, triggerIndexAndWelcome]);
 
-	// Reset pending flag when index status changes
 	useEffect(() => {
 		if (indexStatus) {
 			pendingIndexRef.current = false;
 		}
 	}, [indexStatus]);
 
-	// -----------------------------------------------------------------------
-	// Browse file dialog
 	// -----------------------------------------------------------------------
 	const handleBrowse = useCallback(async () => {
 		const { open } = await import("@tauri-apps/plugin-dialog");
@@ -150,8 +123,6 @@ export default function Home() {
 		}
 	}, [loadPdfByPath]);
 
-	// -----------------------------------------------------------------------
-	// Drag-drop listener
 	// -----------------------------------------------------------------------
 	useEffect(() => {
 		let unlisten: Promise<() => void> | undefined;
@@ -170,8 +141,6 @@ export default function Home() {
 	}, [loadPdfByPath]);
 
 	// -----------------------------------------------------------------------
-	// Refresh both model statuses from backend
-	// -----------------------------------------------------------------------
 	const refreshModelStatus = useCallback(async () => {
 		try {
 			const s = await invoke<{ ready: boolean }>("check_model");
@@ -188,28 +157,22 @@ export default function Home() {
 	}, []);
 
 	// -----------------------------------------------------------------------
-	// Check models on startup + restore index
-	// -----------------------------------------------------------------------
 	useEffect(() => {
 		const init = async () => {
 			await refreshModelStatus();
-
-			// Try to restore existing index
 			try {
 				const summary = await invoke<IndexSummary | null>("load_index");
 				if (summary) {
-					setStatusMessage(`Restored index: ${summary.chunk_count} chunks from previous session`);
 					const status = await invoke<IndexStatus>("get_index_status");
 					setIndexStatus(status);
 				}
 			} catch {
-				// No index yet — fine
+				// No index yet
 			}
 		};
 		init();
 	}, [refreshModelStatus]);
 
-	// When both models become ready, mark setup as complete
 	useEffect(() => {
 		if (modelReady && llmReady) {
 			setSetupComplete(true);
@@ -217,13 +180,10 @@ export default function Home() {
 	}, [modelReady, llmReady]);
 
 	// -----------------------------------------------------------------------
-	// Ask question (Phase 3 — streaming LLM answer)
-	// -----------------------------------------------------------------------
 	const handleAsk = useCallback(
 		async (query: string) => {
 			if (!canAsk || !currentDoc) return;
 
-			// 1. Add user message
 			const userMsg: ChatMessageItem = {
 				id: nextId(),
 				type: "user",
@@ -232,7 +192,6 @@ export default function Home() {
 			};
 			setMessages((prev) => [...prev, userMsg]);
 
-			// 2. Create a placeholder assistant message for streaming
 			const assistantId = nextId();
 			const assistantMsg: ChatMessageItem = {
 				id: assistantId,
@@ -245,8 +204,6 @@ export default function Home() {
 			};
 			setMessages((prev) => [...prev, assistantMsg]);
 			streamingIdRef.current = assistantId;
-
-			// 3. Set up event listeners before invoking
 			setIsGenerating(true);
 
 			const unlistenToken = await listen<string>("rag:token", (event) => {
@@ -274,11 +231,7 @@ export default function Home() {
 				setMessages((prev) =>
 					prev.map((m) =>
 						m.id === streamingIdRef.current
-							? {
-									...m,
-									text: `${m.text || ""}\n\n⚠️ Error: ${event.payload}`,
-									isStreaming: false,
-								}
+							? { ...m, text: `${m.text || ""}\n\n⚠️ Error: ${event.payload}`, isStreaming: false }
 							: m,
 					),
 				);
@@ -290,16 +243,11 @@ export default function Home() {
 				unlistenError();
 			});
 
-			// 4. Invoke the backend (fire-and-forget — responses come via events)
 			invoke("ask_question", { query, topK: 5 }).catch((err: unknown) => {
 				setMessages((prev) =>
 					prev.map((m) =>
 						m.id === streamingIdRef.current
-							? {
-									...m,
-									text: `${m.text || ""}\n\n⚠️ Error: ${err}`,
-									isStreaming: false,
-								}
+							? { ...m, text: `${m.text || ""}\n\n⚠️ Error: ${err}`, isStreaming: false }
 							: m,
 					),
 				);
@@ -315,51 +263,41 @@ export default function Home() {
 	);
 
 	// -----------------------------------------------------------------------
-	// Handle result click → open source panel
-	// -----------------------------------------------------------------------
 	const handleResultClick = useCallback((result: SearchResult) => {
 		setSourcePage(result.page);
 	}, []);
 
-	// -----------------------------------------------------------------------
-	// Close document
-	// -----------------------------------------------------------------------
 	const handleCloseDocument = useCallback(() => {
 		setCurrentDoc(null);
 		setIndexStatus(null);
 		setMessages([]);
 		setSourcePage(null);
-		setStatusMessage("");
 	}, []);
 
-	// -----------------------------------------------------------------------
-	// Source panel navigation
-	// -----------------------------------------------------------------------
 	const handleSourceNavigate = useCallback((page: number) => {
 		setSourcePage(page);
 	}, []);
 
 	// -----------------------------------------------------------------------
-	// Render
-	// -----------------------------------------------------------------------
 	return (
 		<div className="h-screen flex flex-col" style={{ background: "var(--bg-main)" }}>
 			{/* ── Header ── */}
 			<header
-				className="flex items-center justify-between px-5 py-3 shrink-0"
+				className="flex items-center justify-between shrink-0"
 				style={{
 					background: "var(--bg-surface)",
 					borderBottom: "1px solid var(--border-default)",
+					padding: "var(--space-3) var(--space-5)",
 				}}
 			>
 				<div className="flex items-center gap-3 min-w-0">
 					<div
-						className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+						className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
 						style={{ background: "var(--bg-accent)" }}
 					>
 						<svg
-							width="16"
-							height="16"
+							width="18"
+							height="18"
 							viewBox="0 0 24 24"
 							fill="none"
 							stroke="white"
@@ -367,15 +305,15 @@ export default function Home() {
 							strokeLinecap="round"
 							strokeLinejoin="round"
 						>
-							<title>zoloRAG</title>
+							<title>ZoloRAG</title>
 							<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
 						</svg>
 					</div>
 					<div className="min-w-0">
-						<h1 className="text-base font-semibold truncate" style={{ color: "var(--text-primary)" }}>
-							zoloRAG
+						<h1 className="text-base font-semibold tracking-tight truncate" style={{ color: "var(--text-primary)" }}>
+							ZoloRAG
 						</h1>
-						<p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+						<p className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>
 							{currentDoc ? currentDoc.file_name : "Local PDF Chat"}
 						</p>
 					</div>
@@ -387,10 +325,12 @@ export default function Home() {
 							<button
 								type="button"
 								onClick={handleBrowse}
-								className="text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors"
+								className="text-xs font-medium transition-all duration-150 hover:opacity-80 active:scale-95"
 								style={{
 									color: "var(--text-accent)",
 									background: "var(--bg-accent-subtle)",
+									padding: "6px 14px",
+									borderRadius: "var(--radius-md)",
 								}}
 							>
 								Change PDF
@@ -398,12 +338,15 @@ export default function Home() {
 							<button
 								type="button"
 								onClick={handleCloseDocument}
-								className="flex items-center justify-center w-7 h-7 rounded-lg transition-colors hover:opacity-60"
-								style={{ color: "var(--text-muted)" }}
+								className="flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-150 hover:bg-hover active:scale-95"
+								style={{
+									color: "var(--text-muted)",
+									borderRadius: "var(--radius-md)",
+								}}
 							>
 								<svg
-									width="14"
-									height="14"
+									width="15"
+									height="15"
 									viewBox="0 0 24 24"
 									fill="none"
 									stroke="currentColor"
@@ -421,11 +364,10 @@ export default function Home() {
 				</div>
 			</header>
 
-			{/* ── Content area (chat + optional source panel) ── */}
+			{/* ── Content ── */}
 			<div className="flex-1 flex overflow-hidden">
-				{/* Main chat column */}
 				<div className="flex-1 flex flex-col min-w-0">
-					{/* Empty state: setup panel or drop zone */}
+					{/* Setup or Drop */}
 					{!hasDocument && !setupComplete && (
 						<SetupPanel
 							onComplete={() => {
@@ -435,14 +377,14 @@ export default function Home() {
 						/>
 					)}
 					{!hasDocument && setupComplete && (
-						<div className="flex-1 flex items-center justify-center p-8">
-							<div className="w-full max-w-md">
+						<div className="flex-1 flex items-center justify-center" style={{ padding: "var(--space-10)" }}>
+							<div className="w-full" style={{ maxWidth: "440px" }}>
 								<DropZone onBrowse={handleBrowse} />
 							</div>
 						</div>
 					)}
 
-					{/* Chat view */}
+					{/* Chat */}
 					{hasDocument && (
 						<>
 							<ChatMessages
@@ -453,41 +395,95 @@ export default function Home() {
 							/>
 
 							{/* Input area */}
-							<div className="shrink-0 px-4 pb-3 pt-2">
+							<div
+								style={{
+									padding: "var(--space-3) var(--space-5) var(--space-4)",
+									background: "var(--bg-main)",
+									borderTop: "1px solid var(--border-subtle)",
+								}}
+							>
 								{isIndexing ? (
 									<div
-										className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm"
 										style={{
 											background: "var(--bg-surface)",
 											border: "1px solid var(--border-default)",
-											color: "var(--text-muted)",
+											borderRadius: "var(--radius-lg)",
+											padding: "16px 20px",
 										}}
 									>
-										<div className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
-										<span>Indexing document...</span>
+										<div className="flex items-center gap-3 text-sm">
+											<svg
+												className="animate-spin-slow shrink-0"
+												width="18"
+												height="18"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												strokeWidth="2.5"
+												strokeLinecap="round"
+												strokeLinejoin="round"
+												style={{ color: "var(--text-accent)" }}
+											>
+												<title>Loading</title>
+												<path d="M21 12a9 9 0 1 1-6.219-8.56" />
+											</svg>
+											<div className="flex-1">
+												<span className="font-medium" style={{ color: "var(--text-primary)" }}>
+													Preparing your document...
+												</span>
+												<div
+													className="mt-2 w-full h-1.5 rounded-full overflow-hidden"
+													style={{ background: "var(--bg-surface-raised)" }}
+												>
+													<div
+														className="h-full rounded-full indexing-bar"
+														style={{ width: "100%", background: "var(--bg-accent)" }}
+													/>
+												</div>
+											</div>
+										</div>
 									</div>
 								) : canAsk ? (
 									<ChatInput
 										onSend={handleAsk}
 										disabled={isGenerating}
-										placeholder={isGenerating ? "Waiting for answer..." : "Ask a question about your document..."}
+										placeholder={isGenerating ? "Generating answer..." : "Ask a question about your document..."}
 									/>
 								) : (
 									<div
-										className="px-4 py-3 rounded-xl text-sm"
+										className="flex items-center gap-3 text-sm"
 										style={{
 											background: "var(--bg-surface)",
 											border: "1px solid var(--border-default)",
+											borderRadius: "var(--radius-lg)",
 											color: "var(--text-muted)",
+											padding: "14px 18px",
 										}}
 									>
-										{!modelReady
-											? "Embedding model not ready."
-											: !indexStatus
-												? "No index found. Try re-loading the document."
-												: !llmReady
-													? "LLM model not ready."
-													: "Something isn't ready yet."}
+										<svg
+											width="16"
+											height="16"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											strokeWidth="2"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										>
+											<title>Status</title>
+											<circle cx="12" cy="12" r="10" />
+											<line x1="12" y1="8" x2="12" y2="12" />
+											<line x1="12" y1="16" x2="12.01" y2="16" />
+										</svg>
+										<span>
+											{!modelReady
+												? "Just a moment, still getting ready..."
+												: !indexStatus
+													? "Almost ready, processing your document..."
+													: !llmReady
+														? "Finishing up the setup..."
+														: "Something isn't ready yet."}
+										</span>
 									</div>
 								)}
 							</div>
@@ -495,7 +491,7 @@ export default function Home() {
 					)}
 				</div>
 
-				{/* Source panel (slide-out) */}
+				{/* Source panel */}
 				{sourcePage !== null && currentDoc && (
 					<SourcePanel
 						document={currentDoc}
@@ -505,69 +501,6 @@ export default function Home() {
 					/>
 				)}
 			</div>
-
-			{/* ── Footer ── */}
-			{hasDocument && indexStatus && (
-				<footer
-					className="flex items-center gap-3 px-5 py-2 shrink-0 text-xs"
-					style={{
-						background: "var(--bg-surface)",
-						borderTop: "1px solid var(--border-default)",
-						color: "var(--text-muted)",
-					}}
-				>
-					<span className="flex items-center gap-1.5">
-						<svg
-							width="10"
-							height="10"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="2"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-						>
-							<title>Index</title>
-							<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-							<polyline points="14 2 14 8 20 8" />
-							<line x1="16" y1="13" x2="8" y2="13" />
-							<line x1="16" y1="17" x2="8" y2="17" />
-						</svg>
-						{indexStatus.indexed_chunks} chunk
-						{indexStatus.indexed_chunks !== 1 ? "s" : ""} indexed
-					</span>
-
-					{modelReady && (
-						<span className="flex items-center gap-1.5">
-							<svg
-								width="10"
-								height="10"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								strokeWidth="2.5"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								style={{ color: "var(--text-success)" }}
-							>
-								<title>Ready</title>
-								<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-								<polyline points="22 4 12 14.01 9 11.01" />
-							</svg>
-							Model ready
-						</span>
-					)}
-
-					{isIndexing && (
-						<span className="flex items-center gap-1.5">
-							<div className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
-							Indexing...
-						</span>
-					)}
-
-					{statusMessage && <span className="ml-auto truncate">{statusMessage}</span>}
-				</footer>
-			)}
 		</div>
 	);
 }
