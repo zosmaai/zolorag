@@ -70,6 +70,8 @@ jobs:
 
       - name: Build Tauri (Windows)
         run: pnpm tauri build --bundles nsis
+        env:
+          LLAMA_CPP_MSVC_USE_MD: "1"
 
       - name: Upload NSIS installer
         uses: actions/upload-artifact@v4
