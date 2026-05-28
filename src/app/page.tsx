@@ -3,6 +3,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, AlertTriangle, LoaderCircle, X, XCircle } from "lucide-react";
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages, { type ChatMessageItem } from "@/components/ChatMessages";
@@ -297,10 +298,12 @@ export default function Home() {
 				}}
 			>
 				<div className="flex items-center gap-3 min-w-0">
-					<img
+					<Image
 						src="/zolorag-logo.png"
 						alt="ZoloRAG"
-						className="w-9 h-9 shrink-0"
+						width={36}
+						height={36}
+						className="shrink-0"
 						style={{ borderRadius: "var(--radius-md)" }}
 					/>
 					<div className="min-w-0">
