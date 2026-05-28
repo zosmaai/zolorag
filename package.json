@@ -20,13 +20,6 @@
 		"builds:win": "node scripts/check-platform.mjs windows && pnpm tauri build --bundles nsis && node scripts/copy-builds.mjs windows",
 		"builds": "pnpm tauri build && node scripts/copy-builds.mjs"
 	},
-	"pnpm": {
-		"onlyBuiltDependencies": [
-			"esbuild",
-			"sharp",
-			"@tauri-apps/cli"
-		]
-	},
 	"lint-staged": {
 		"*.{js,ts,jsx,tsx,json,css,html}": [
 			"biome check --write --no-errors-on-unmatched"
