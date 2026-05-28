@@ -5,9 +5,12 @@ import type { SearchResult } from "@/types";
 
 export interface ChatMessageItem {
 	id: string;
-	type: "user" | "assistant";
+	type: "user" | "assistant" | "assistant_llm";
 	query?: string;
 	results?: SearchResult[];
+	text?: string;
+	sources?: SearchResult[];
+	isStreaming?: boolean;
 	timestamp: number;
 }
 
@@ -60,7 +63,7 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 					</p>
 					<p className="text-xs" style={{ color: "var(--text-muted)" }}>
 						{currentDocName
-							? "Type a question below to search the document."
+							? "Type a question below. The AI will answer based on the document."
 							: "Load a document, then ask anything about it."}
 					</p>
 				</div>
@@ -88,7 +91,65 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 							</div>
 						)}
 
-						{/* Assistant message (search results) */}
+						{/* Assistant message (LLM answer) */}
+						{msg.type === "assistant_llm" && (
+							<div className="flex flex-col gap-2 mt-2">
+								<div
+									className="rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap"
+									style={{
+										background: "var(--bg-surface)",
+										border: "1px solid var(--border-default)",
+										color: "var(--text-primary)",
+									}}
+								>
+									{msg.text || ""}
+									{msg.isStreaming && (
+										<span
+											className="inline-block w-1.5 h-4 ml-0.5 animate-pulse"
+											style={{ background: "var(--text-accent)" }}
+										/>
+									)}
+								</div>
+
+								{/* Source citations (shown after streaming completes) */}
+								{!msg.isStreaming && msg.sources && msg.sources.length > 0 && (
+									<div className="flex flex-wrap gap-1.5 px-1">
+										{msg.sources.map((source) => (
+											<button
+												type="button"
+												key={source.chunk_id}
+												onClick={() => onResultClick(source)}
+												className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium transition-colors hover:opacity-80"
+												style={{
+													background: "var(--bg-accent-subtle)",
+													color: "var(--text-accent)",
+													border: "1px solid var(--border-accent)",
+												}}
+											>
+												<svg
+													width="9"
+													height="9"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													strokeWidth="2.5"
+													strokeLinecap="round"
+													strokeLinejoin="round"
+												>
+													<title>Page</title>
+													<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+													<polyline points="14 2 14 8 20 8" />
+												</svg>
+												Page {source.page}
+												<span style={{ opacity: 0.6 }}>{formatScore(source.score)}</span>
+											</button>
+										))}
+									</div>
+								)}
+							</div>
+						)}
+
+						{/* Legacy: Phase 2 search results (keep for backward compat) */}
 						{msg.type === "assistant" && msg.results && msg.results.length > 0 && (
 							<div className="flex flex-col gap-2 mt-2">
 								<p className="text-xs font-medium px-1" style={{ color: "var(--text-muted)" }}>
@@ -160,7 +221,7 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 					</div>
 				))}
 
-				{/* Searching indicator */}
+				{/* Searching/generating indicator */}
 				{isSearching && (
 					<div className="flex items-center gap-2 px-1 py-2">
 						<div
@@ -168,7 +229,7 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 							style={{ color: "var(--text-muted)" }}
 						/>
 						<span className="text-sm" style={{ color: "var(--text-muted)" }}>
-							Searching...
+							Generating answer...
 						</span>
 					</div>
 				)}

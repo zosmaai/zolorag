@@ -23,8 +23,10 @@ export default function Home() {
 
 	// Phase 2 state
 	const [modelReady, setModelReady] = useState(false);
+	const [llmReady, setLlmReady] = useState(false);
+	const [pullingLlm, setPullingLlm] = useState(false);
 	const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
-	const [isSearching, setIsSearching] = useState(false);
+	const [isGenerating, setIsGenerating] = useState(false);
 	const [isIndexing, setIsIndexing] = useState(false);
 
 	// Chat state
@@ -33,65 +35,77 @@ export default function Home() {
 	// Source panel
 	const [sourcePage, setSourcePage] = useState<number | null>(null);
 
+	// Ref for the current streaming message ID (updated without re-renders)
+	const streamingIdRef = useRef<string | null>(null);
+
 	const hasDocument = currentDoc !== null;
-	const canSearch = modelReady && indexStatus !== null && indexStatus.indexed_chunks > 0;
+	const canAsk = modelReady && indexStatus !== null && indexStatus.indexed_chunks > 0 && llmReady;
 
 	// -----------------------------------------------------------------------
-	// Helper: add a system welcome message after loading a doc
+	// Helper: add a welcome message after loading a doc
 	// -----------------------------------------------------------------------
 	const addWelcomeMessage = useCallback((doc: PdfDocument, chunkCount: number) => {
 		setMessages([
 			{
 				id: nextId(),
-				type: "assistant",
+				type: "assistant_llm",
 				query: "",
-				results: [],
+				text: `📄 **${doc.file_name}** loaded (${doc.total_pages} pages, ${chunkCount} chunks indexed). Ask a question to get started!`,
+				sources: [],
+				isStreaming: false,
 				timestamp: Date.now(),
 			},
 		]);
-		setStatusMessage(`${doc.file_name} — ${chunkCount} chunks indexed. Ask a question!`);
+		setStatusMessage(`${doc.file_name} — ${chunkCount} chunks indexed`);
 	}, []);
 
 	// -----------------------------------------------------------------------
-	// Load PDF → then auto-index
+	// Index after PDF load
+	// -----------------------------------------------------------------------
+	const triggerIndexAndWelcome = useCallback(
+		(doc: PdfDocument) => {
+			setIsIndexing(true);
+			setStatusMessage("Indexing document...");
+			invoke<{ doc_count: number; chunk_count: number; index_path: string }>("index_document")
+				.then(async (summary) => {
+					const istatus = await invoke<IndexStatus>("get_index_status");
+					setIndexStatus(istatus);
+					addWelcomeMessage(doc, summary.chunk_count);
+				})
+				.catch((err: unknown) => {
+					console.warn("Auto-index failed:", err);
+					setStatusMessage(`Indexing failed: ${err}`);
+				})
+				.finally(() => setIsIndexing(false));
+		},
+		[addWelcomeMessage],
+	);
+
+	// -----------------------------------------------------------------------
+	// Load PDF
 	// -----------------------------------------------------------------------
 	const loadPdfByPath = useCallback(
 		async (path: string) => {
 			setStatusMessage(`Loading ${path.split("/").pop() || path}...`);
 			setMessages([]);
 			setSourcePage(null);
+			setIndexStatus(null);
 			try {
 				const doc = await invoke<PdfDocument>("load_pdf", { path });
 				setCurrentDoc(doc);
 
-				// Auto-index if model is ready
 				if (modelReady) {
-					// triggerIndex will run after currentDoc is set
-					// We use a timeout to let state settle
-					setTimeout(() => {
-						setIsIndexing(true);
-						setStatusMessage("Indexing document...");
-						invoke<{ doc_count: number; chunk_count: number; index_path: string }>("index_document")
-							.then(async (summary) => {
-								const istatus = await invoke<IndexStatus>("get_index_status");
-								setIndexStatus(istatus);
-								addWelcomeMessage(doc, summary.chunk_count);
-							})
-							.catch((err: unknown) => {
-								console.warn("Auto-index failed:", err);
-								setStatusMessage(`Indexing failed: ${err}`);
-							})
-							.finally(() => setIsIndexing(false));
-					}, 0);
+					triggerIndexAndWelcome(doc);
 				} else {
 					setStatusMessage(`${doc.file_name} loaded. Waiting for embedding model to index...`);
-					// Show a basic welcome without index stats
 					setMessages([
 						{
 							id: nextId(),
-							type: "assistant",
+							type: "assistant_llm",
 							query: "",
-							results: [],
+							text: `📄 ${doc.file_name} loaded. Model not ready yet — search will activate once the embedding model is available.`,
+							sources: [],
+							isStreaming: false,
 							timestamp: Date.now(),
 						},
 					]);
@@ -100,32 +114,24 @@ export default function Home() {
 				setStatusMessage(`Error: ${err}`);
 			}
 		},
-		[modelReady, addWelcomeMessage],
+		[modelReady, triggerIndexAndWelcome],
 	);
 
-	// Also trigger index when model becomes ready and we have a pending doc
+	// Also trigger index when model becomes ready with a pending doc
 	const pendingIndexRef = useRef(false);
 	useEffect(() => {
-		if (modelReady && currentDoc && !indexStatus && !pendingIndexRef.current) {
+		if (modelReady && currentDoc && !indexStatus && !pendingIndexRef.current && !isIndexing) {
 			pendingIndexRef.current = true;
-			setIsIndexing(true);
-			setStatusMessage("Indexing document...");
-			invoke<{ doc_count: number; chunk_count: number; index_path: string }>("index_document")
-				.then(async (summary) => {
-					const istatus = await invoke<IndexStatus>("get_index_status");
-					setIndexStatus(istatus);
-					addWelcomeMessage(currentDoc, summary.chunk_count);
-				})
-				.catch((err: unknown) => {
-					console.warn("Auto-index failed:", err);
-					setStatusMessage(`Indexing failed: ${err}`);
-				})
-				.finally(() => {
-					setIsIndexing(false);
-					pendingIndexRef.current = false;
-				});
+			triggerIndexAndWelcome(currentDoc);
 		}
-	}, [modelReady, currentDoc, indexStatus, addWelcomeMessage]);
+	}, [modelReady, currentDoc, indexStatus, isIndexing, triggerIndexAndWelcome]);
+
+	// Reset pending flag when index status changes
+	useEffect(() => {
+		if (indexStatus) {
+			pendingIndexRef.current = false;
+		}
+	}, [indexStatus]);
 
 	// -----------------------------------------------------------------------
 	// Browse file dialog
@@ -162,10 +168,42 @@ export default function Home() {
 	}, [loadPdfByPath]);
 
 	// -----------------------------------------------------------------------
+	// Check LLM model availability
+	// -----------------------------------------------------------------------
+	const checkLlmModel = useCallback(async () => {
+		try {
+			const status = await invoke<{ ready: boolean; message: string }>("check_llm_model");
+			setLlmReady(status.ready);
+			if (!status.ready) {
+				setStatusMessage(`LLM: ${status.message}`);
+			}
+		} catch {
+			setLlmReady(false);
+		}
+	}, []);
+
+	const handlePullLlm = useCallback(async () => {
+		setPullingLlm(true);
+		setStatusMessage("Pulling LLM model (llama3.2:3b)...");
+		try {
+			await invoke("pull_llm_model");
+			await checkLlmModel();
+			setStatusMessage("LLM model ready!");
+		} catch (err) {
+			setStatusMessage(`Failed to pull LLM model: ${err}`);
+		} finally {
+			setPullingLlm(false);
+		}
+	}, [checkLlmModel]);
+
+	// -----------------------------------------------------------------------
 	// Load existing index on startup
 	// -----------------------------------------------------------------------
 	useEffect(() => {
 		const init = async () => {
+			// Check LLM model on startup
+			checkLlmModel();
+
 			try {
 				const summary = await invoke<IndexSummary | null>("load_index");
 				if (summary) {
@@ -178,18 +216,16 @@ export default function Home() {
 			}
 		};
 		init();
-	}, []);
+	}, [checkLlmModel]);
 
 	// -----------------------------------------------------------------------
-	// Search
+	// Ask question (Phase 3 — streaming LLM answer)
 	// -----------------------------------------------------------------------
-	const handleSearch = useCallback(
+	const handleAsk = useCallback(
 		async (query: string) => {
-			if (!canSearch || !currentDoc) return;
+			if (!canAsk || !currentDoc) return;
 
-			setIsSearching(true);
-
-			// Add user message
+			// 1. Add user message
 			const userMsg: ChatMessageItem = {
 				id: nextId(),
 				type: "user",
@@ -198,36 +234,86 @@ export default function Home() {
 			};
 			setMessages((prev) => [...prev, userMsg]);
 
-			try {
-				const results = await invoke<SearchResult[]>("query_index", {
-					query,
-					topK: 5,
-				});
+			// 2. Create a placeholder assistant message for streaming
+			const assistantId = nextId();
+			const assistantMsg: ChatMessageItem = {
+				id: assistantId,
+				type: "assistant_llm",
+				query,
+				text: "",
+				sources: [],
+				isStreaming: true,
+				timestamp: Date.now(),
+			};
+			setMessages((prev) => [...prev, assistantMsg]);
+			streamingIdRef.current = assistantId;
 
-				// Add assistant message with results
-				const assistantMsg: ChatMessageItem = {
-					id: nextId(),
-					type: "assistant",
-					query,
-					results,
-					timestamp: Date.now(),
-				};
-				setMessages((prev) => [...prev, assistantMsg]);
-			} catch (err) {
-				setStatusMessage(`Search error: ${err}`);
-				const errorMsg: ChatMessageItem = {
-					id: nextId(),
-					type: "assistant",
-					query,
-					results: [],
-					timestamp: Date.now(),
-				};
-				setMessages((prev) => [...prev, errorMsg]);
-			} finally {
-				setIsSearching(false);
-			}
+			// 3. Set up event listeners before invoking
+			setIsGenerating(true);
+
+			const unlistenToken = await listen<string>("rag:token", (event) => {
+				setMessages((prev) =>
+					prev.map((m) => (m.id === streamingIdRef.current ? { ...m, text: (m.text || "") + event.payload } : m)),
+				);
+			});
+
+			const unlistenSources = await listen<SearchResult[]>("rag:sources", (event) => {
+				setMessages((prev) =>
+					prev.map((m) => (m.id === streamingIdRef.current ? { ...m, sources: event.payload } : m)),
+				);
+			});
+
+			const unlistenDone = await listen<string>("rag:done", () => {
+				setMessages((prev) => prev.map((m) => (m.id === streamingIdRef.current ? { ...m, isStreaming: false } : m)));
+				streamingIdRef.current = null;
+				setIsGenerating(false);
+				unlistenToken();
+				unlistenSources();
+				unlistenDone();
+			});
+
+			const unlistenError = await listen<string>("rag:error", (event) => {
+				setMessages((prev) =>
+					prev.map((m) =>
+						m.id === streamingIdRef.current
+							? {
+									...m,
+									text: `${m.text || ""}\n\n⚠️ Error: ${event.payload}`,
+									isStreaming: false,
+								}
+							: m,
+					),
+				);
+				streamingIdRef.current = null;
+				setIsGenerating(false);
+				unlistenToken();
+				unlistenSources();
+				unlistenDone();
+				unlistenError();
+			});
+
+			// 4. Invoke the backend (fire-and-forget — responses come via events)
+			invoke("ask_question", { query, topK: 5 }).catch((err: unknown) => {
+				setMessages((prev) =>
+					prev.map((m) =>
+						m.id === streamingIdRef.current
+							? {
+									...m,
+									text: `${m.text || ""}\n\n⚠️ Error: ${err}`,
+									isStreaming: false,
+								}
+							: m,
+					),
+				);
+				streamingIdRef.current = null;
+				setIsGenerating(false);
+				unlistenToken();
+				unlistenSources();
+				unlistenDone();
+				unlistenError();
+			});
 		},
-		[canSearch, currentDoc],
+		[canAsk, currentDoc],
 	);
 
 	// -----------------------------------------------------------------------
@@ -237,6 +323,13 @@ export default function Home() {
 		setSourcePage(result.page);
 	}, []);
 
+	// Check LLM model when embedding model becomes ready
+	useEffect(() => {
+		if (modelReady) {
+			checkLlmModel();
+		}
+	}, [modelReady, checkLlmModel]);
+
 	// -----------------------------------------------------------------------
 	// Model readiness callback
 	// -----------------------------------------------------------------------
@@ -245,7 +338,7 @@ export default function Home() {
 	}, []);
 
 	// -----------------------------------------------------------------------
-	// Close document / reset
+	// Close document
 	// -----------------------------------------------------------------------
 	const handleCloseDocument = useCallback(() => {
 		setCurrentDoc(null);
@@ -305,7 +398,6 @@ export default function Home() {
 				</div>
 
 				<div className="flex items-center gap-2 shrink-0">
-					{/* Doc management */}
 					{hasDocument && (
 						<>
 							<button
@@ -315,12 +407,6 @@ export default function Home() {
 								style={{
 									color: "var(--text-accent)",
 									background: "var(--bg-accent-subtle)",
-								}}
-								onMouseEnter={(e) => {
-									e.currentTarget.style.opacity = "0.8";
-								}}
-								onMouseLeave={(e) => {
-									e.currentTarget.style.opacity = "1";
 								}}
 							>
 								Change PDF
@@ -349,7 +435,6 @@ export default function Home() {
 						</>
 					)}
 
-					{/* Model status */}
 					<ModelBanner onStatusChange={handleModelChange} />
 				</div>
 			</header>
@@ -372,10 +457,54 @@ export default function Home() {
 						<>
 							<ChatMessages
 								messages={messages}
-								isSearching={isSearching}
+								isSearching={isGenerating}
 								onResultClick={handleResultClick}
 								currentDocName={currentDoc?.file_name}
 							/>
+
+							{/* LLM download banner */}
+							{!llmReady && hasDocument && indexStatus && !isIndexing && (
+								<div
+									className="flex items-center gap-2 px-4 py-2 mx-4 mb-2 rounded-lg text-xs"
+									style={{
+										background: "var(--bg-warning-subtle)",
+										color: "var(--text-warning)",
+									}}
+								>
+									<svg
+										width="12"
+										height="12"
+										viewBox="0 0 24 24"
+										fill="none"
+										stroke="currentColor"
+										strokeWidth="2"
+										strokeLinecap="round"
+										strokeLinejoin="round"
+									>
+										<title>Warning</title>
+										<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+										<line x1="12" y1="9" x2="12" y2="13" />
+										<line x1="12" y1="17" x2="12.01" y2="17" />
+									</svg>
+									<span className="flex-1">LLM model not available. Download llama3.2:3b to enable AI answers.</span>
+									{!pullingLlm && (
+										<button
+											type="button"
+											onClick={handlePullLlm}
+											className="px-2.5 py-1 rounded text-xs font-medium"
+											style={{ background: "var(--bg-accent)", color: "white" }}
+										>
+											Download LLM (~2GB)
+										</button>
+									)}
+									{pullingLlm && (
+										<div className="flex items-center gap-1">
+											<div className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+											<span>Downloading...</span>
+										</div>
+									)}
+								</div>
+							)}
 
 							{/* Input area */}
 							<div className="shrink-0 px-4 pb-3 pt-2">
@@ -391,8 +520,12 @@ export default function Home() {
 										<div className="w-4 h-4 rounded-full border-2 border-current border-t-transparent animate-spin" />
 										<span>Indexing document...</span>
 									</div>
-								) : canSearch ? (
-									<ChatInput onSend={handleSearch} disabled={isSearching} />
+								) : canAsk ? (
+									<ChatInput
+										onSend={handleAsk}
+										disabled={isGenerating}
+										placeholder={isGenerating ? "Waiting for answer..." : "Ask a question about your document..."}
+									/>
 								) : (
 									<div
 										className="px-4 py-3 rounded-xl text-sm"
@@ -402,9 +535,13 @@ export default function Home() {
 											color: "var(--text-muted)",
 										}}
 									>
-										{modelReady
-											? "No index available. Try re-loading the document."
-											: "Embedding model not ready. Search is unavailable."}
+										{!modelReady
+											? "Embedding model not ready."
+											: !indexStatus
+												? "No index found. Try re-loading the document."
+												: !llmReady
+													? "LLM model not ready. Download above to ask questions."
+													: "Something isn't ready yet."}
 									</div>
 								)}
 							</div>
@@ -482,10 +619,7 @@ export default function Home() {
 						</span>
 					)}
 
-					{/* Status message */}
-					{statusMessage && !statusMessage.startsWith("Error:") && (
-						<span className="ml-auto truncate">{statusMessage}</span>
-					)}
+					{statusMessage && <span className="ml-auto truncate">{statusMessage}</span>}
 				</footer>
 			)}
 		</div>

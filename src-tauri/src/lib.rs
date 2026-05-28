@@ -1,15 +1,17 @@
 pub mod index;
 pub mod pdf;
+pub mod rag;
 
 use index::{
-    check_model_status, pull_model, BitIndex, ChunkInfo, EncodedVector, IndexStatus, IndexSummary,
-    ModelStatus, OllamaEncoder, SearchResult,
+    check_llm_model_status, check_model_status, pull_model, BitIndex, ChunkInfo, EncodedVector,
+    IndexStatus, IndexSummary, ModelStatus, OllamaEncoder, SearchResult,
 };
 use pdf::chunk::Chunk;
 use pdf::extract::PdfDocument;
+use rag::{ChatHistory, ContextBuilder, OllamaChatClient};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 
 // ---------------------------------------------------------------------------
 // App State
@@ -21,13 +23,17 @@ struct AppState {
     bit_index: Mutex<Option<BitIndex>>,
     encoder: OllamaEncoder,
     index_path: Mutex<Option<PathBuf>>,
+    // Phase 3
+    chat_history: Mutex<ChatHistory>,
+    context_builder: ContextBuilder,
+    llm_client: OllamaChatClient,
+    last_sources: Mutex<Vec<SearchResult>>,
 }
 
 // ---------------------------------------------------------------------------
 // Phase 1 Commands
 // ---------------------------------------------------------------------------
 
-/// Load a PDF file: extract text and chunk it.
 #[tauri::command]
 fn load_pdf(path: String, state: State<AppState>) -> Result<PdfDocument, String> {
     let doc = pdf::extract::extract_text(&path).map_err(|e| e.to_string())?;
@@ -39,7 +45,6 @@ fn load_pdf(path: String, state: State<AppState>) -> Result<PdfDocument, String>
     Ok(doc)
 }
 
-/// Get chunks for the currently loaded document.
 #[tauri::command]
 fn get_chunks(state: State<AppState>) -> Result<Vec<Chunk>, String> {
     let chunks = state.current_chunks.lock().unwrap().clone();
@@ -50,29 +55,26 @@ fn get_chunks(state: State<AppState>) -> Result<Vec<Chunk>, String> {
 // Phase 2 Commands
 // ---------------------------------------------------------------------------
 
-/// Check Ollama status and whether all-minilm model is available.
 #[tauri::command]
 async fn check_model(app: tauri::AppHandle) -> Result<ModelStatus, String> {
     let state = app.state::<AppState>();
-    let client = &state.encoder;
-    // reqwest::Client is cheaply cloneable (Arc internally)
-    let client_clone = client.client();
+    let client_clone = state.encoder.client();
     let status = check_model_status(&client_clone).await;
     Ok(status)
 }
 
-/// Pull the all-minilm model via Ollama.
 #[tauri::command]
 async fn pull_embedding_model(app: tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
     let client_clone = state.encoder.client();
-    pull_model(&client_clone).await
+    pull_model(&client_clone, "all-minilm").await
 }
 
-/// Encode all current chunks into the bit-vector index and persist to disk.
 #[tauri::command]
-async fn index_document(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<IndexSummary, String> {
-    // 1. Grab chunks (drop lock before await)
+async fn index_document(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<IndexSummary, String> {
     let chunks = {
         let guard = state.current_chunks.lock().map_err(|e| e.to_string())?;
         guard.clone()
@@ -82,11 +84,9 @@ async fn index_document(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
         return Err("No chunks to index. Load a PDF first.".into());
     }
 
-    // 2. Encode all chunks (async — no lock held)
     let texts: Vec<String> = chunks.iter().map(|c| c.text.clone()).collect();
     let encoded: Vec<EncodedVector> = state.encoder.encode_batch(&texts).await?;
 
-    // 3. Build bit index (binary + float32 + term index)
     let mut bit_index = BitIndex::new();
     for (i, chunk) in chunks.iter().enumerate() {
         bit_index.add_chunk(
@@ -101,7 +101,6 @@ async fn index_document(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
         );
     }
 
-    // 4. Persist to disk
     let app_dir = app
         .path()
         .app_data_dir()
@@ -110,7 +109,6 @@ async fn index_document(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
     let index_path = app_dir.join("index.bin");
     bit_index.save(&index_path)?;
 
-    // 5. Store in state
     *state.bit_index.lock().map_err(|e| e.to_string())? = Some(bit_index);
     *state.index_path.lock().map_err(|e| e.to_string())? = Some(index_path.clone());
 
@@ -121,9 +119,11 @@ async fn index_document(app: tauri::AppHandle, state: State<'_, AppState>) -> Re
     })
 }
 
-/// Try to load an existing index from disk on startup.
 #[tauri::command]
-async fn load_index(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<Option<IndexSummary>, String> {
+async fn load_index(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<IndexSummary>, String> {
     let app_dir = app
         .path()
         .app_data_dir()
@@ -149,7 +149,6 @@ async fn load_index(app: tauri::AppHandle, state: State<'_, AppState>) -> Result
     }
 }
 
-/// Search the index for top-K chunks matching a query.
 #[tauri::command]
 async fn query_index(
     query: String,
@@ -158,10 +157,8 @@ async fn query_index(
 ) -> Result<Vec<SearchResult>, String> {
     let k = top_k.unwrap_or(5) as usize;
 
-    // 1. Encode the query (both bit vector + float32)
     let encoded = state.encoder.encode(&query).await?;
 
-    // 2. Search the index (binary Hamming → float32 rescore → keyword blend)
     let bit_index = state
         .bit_index
         .lock()
@@ -169,16 +166,10 @@ async fn query_index(
         .clone()
         .ok_or_else(|| "No index found. Load and index a PDF first.".to_string())?;
 
-    let results = bit_index.search_hybrid(
-        &encoded.bit_vector,
-        &encoded.float_vector,
-        &query,
-        k,
-    );
+    let results = bit_index.search_hybrid(&encoded.bit_vector, &encoded.float_vector, &query, k);
     Ok(results)
 }
 
-/// Get current index status (model + chunk counts).
 #[tauri::command]
 fn get_index_status(state: State<AppState>) -> Result<IndexStatus, String> {
     let chunk_count = state
@@ -197,10 +188,140 @@ fn get_index_status(state: State<AppState>) -> Result<IndexStatus, String> {
         .map(|idx| idx.doc_names())
         .unwrap_or_default();
 
-    Ok(index::index::IndexStatus {
+    Ok(IndexStatus {
         indexed_chunks: chunk_count,
         indexed_docs: docs,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 Commands
+// ---------------------------------------------------------------------------
+
+/// Ask a question: retrieve chunks → build context → stream LLM answer via events.
+///
+/// Events emitted:
+/// - `rag:token` (String) — each token from the LLM
+/// - `rag:sources` (Vec<SearchResult>) — source chunks used
+/// - `rag:done` (String) — full answer text
+/// - `rag:error` (String) — error message
+#[tauri::command]
+async fn ask_question(
+    query: String,
+    top_k: Option<u32>,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let k = top_k.unwrap_or(5) as usize;
+
+    // 1. Encode query
+    let encoded = state.encoder.encode(&query).await.map_err(|e| {
+        let err_msg = e.clone();
+        let _ = app.emit("rag:error", err_msg);
+        e
+    })?;
+
+    // 2. Retrieve chunks
+    let bit_index = state
+        .bit_index
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| {
+            let msg = "No index found. Load and index a PDF first.".to_string();
+            let _ = app.emit("rag:error", msg.clone());
+            msg
+        })?;
+
+    let chunks = bit_index.search_hybrid(
+        &encoded.bit_vector,
+        &encoded.float_vector,
+        &query,
+        k,
+    );
+
+    // 3. Store sources
+    *state.last_sources.lock().map_err(|e| e.to_string())? = chunks.clone();
+
+    // 4. Add user message to history
+    state
+        .chat_history
+        .lock()
+        .map_err(|e| e.to_string())?
+        .add_user(query.clone());
+
+    // 5. Build context from chunks + history
+    let history = state
+        .chat_history
+        .lock()
+        .map_err(|e| e.to_string())?
+        .all_messages()
+        .to_vec();
+
+    let messages = state
+        .context_builder
+        .build_messages(&query, &chunks, &history);
+
+    // 6. Stream answer from Ollama
+    let answer = state.llm_client.stream_chat(&messages, &app).await?;
+
+    // 7. Store answer + sources in history
+    state
+        .chat_history
+        .lock()
+        .map_err(|e| e.to_string())?
+        .add_assistant(answer, chunks);
+
+    Ok(())
+}
+
+/// Return the source chunks for the last generated answer.
+#[tauri::command]
+fn get_sources(state: State<AppState>) -> Result<Vec<SearchResult>, String> {
+    let sources = state.last_sources.lock().map_err(|e| e.to_string())?.clone();
+    Ok(sources)
+}
+
+/// Clear conversation history.
+#[tauri::command]
+fn clear_chat(state: State<AppState>) -> Result<(), String> {
+    state
+        .chat_history
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clear();
+    Ok(())
+}
+
+/// Get current chat history for UI display.
+#[tauri::command]
+fn get_chat_history(state: State<AppState>) -> Result<Vec<rag::ChatMessage>, String> {
+    let messages = state
+        .chat_history
+        .lock()
+        .map_err(|e| e.to_string())?
+        .all_messages()
+        .to_vec();
+    Ok(messages)
+}
+
+/// Check if the LLM model is available in Ollama.
+#[tauri::command]
+async fn check_llm_model(app: tauri::AppHandle) -> Result<ModelStatus, String> {
+    let state = app.state::<AppState>();
+    let client_clone = state.encoder.client();
+    let model = state.llm_client.model().to_string();
+    let status = check_llm_model_status(&client_clone, &model).await;
+    Ok(status)
+}
+
+/// Pull the LLM model via Ollama.
+#[tauri::command]
+async fn pull_llm_model(app: tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let client_clone = state.encoder.client();
+    let model = state.llm_client.model().to_string();
+    pull_model(&client_clone, &model).await
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +331,9 @@ fn get_index_status(state: State<AppState>) -> Result<IndexStatus, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let encoder = OllamaEncoder::new();
+    let llm_client = OllamaChatClient::new(None); // defaults to llama3.2:3b
+    let context_builder = ContextBuilder::default();
+    let chat_history = ChatHistory::new(10); // keep last 10 turns
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -220,6 +344,10 @@ pub fn run() {
             bit_index: Mutex::new(None),
             encoder,
             index_path: Mutex::new(None),
+            chat_history: Mutex::new(chat_history),
+            context_builder,
+            llm_client,
+            last_sources: Mutex::new(Vec::new()),
         })
         .invoke_handler(tauri::generate_handler![
             // Phase 1
@@ -232,6 +360,13 @@ pub fn run() {
             load_index,
             query_index,
             get_index_status,
+            // Phase 3
+            ask_question,
+            get_sources,
+            clear_chat,
+            get_chat_history,
+            check_llm_model,
+            pull_llm_model,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

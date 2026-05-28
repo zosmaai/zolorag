@@ -4,4 +4,4 @@ pub mod manager;
 
 pub use encoder::{EncodedVector, OllamaEncoder};
 pub use index::{BitIndex, BitVector, ChunkInfo, IndexStatus, IndexSummary, SearchResult};
-pub use manager::{check_model_status, pull_model, ModelBannerState, ModelStatus};
+pub use manager::{check_llm_model_status, check_model_status, pull_model, ModelBannerState, ModelStatus};
