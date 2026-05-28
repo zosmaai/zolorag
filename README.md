@@ -242,6 +242,14 @@ src-tauri/                    # Backend (Rust)
 - **Phase 5** (in-process LLM via llama.cpp) — ✅ Complete
 - **Known limitations**: single-PDF POC, in-memory chat history (lost on restart), no multi-document support
 
+## References
+
+This project builds on techniques and approaches from the following projects:
+
+- **[askbit](https://github.com/Shanvit7/askbit)** — The binarization RAG approach (bit packing, Hamming distance search) used in Phase 2 of zoloRAG was adopted from this project. AskBit demonstrates how to binarize float embeddings into compact bit vectors for fast approximate nearest-neighbor search using CPU popcount.
+
+- **[email-triage-slm](https://github.com/Shanvit7/email-triage-slm)** — The in-process native LLM inference strategy (Transformers + PEFT) was inspired by this project. Email Triage SLM shows how to run small language models locally without external dependencies, which directly informed zoloRAG's Phase 5 transition away from Ollama to self-contained inference via `candle` and `llama.cpp`.
+
 ## License
 
 MIT

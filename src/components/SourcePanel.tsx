@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronLeft, ChevronRight, FileText, FileX, X } from "lucide-react";
 import { useMemo } from "react";
 import type { PdfDocument } from "@/types";
 
@@ -48,23 +49,7 @@ export default function SourcePanel({ document, page, onClose, onNavigate }: Sou
 						className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
 						style={{ background: "var(--bg-accent-subtle)" }}
 					>
-						<svg
-							width="14"
-							height="14"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="2"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							style={{ color: "var(--text-accent)" }}
-						>
-							<title>Source</title>
-							<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-							<polyline points="14 2 14 8 20 8" />
-							<line x1="16" y1="13" x2="8" y2="13" />
-							<line x1="16" y1="17" x2="8" y2="17" />
-						</svg>
+						<FileText size={14} style={{ color: "var(--text-accent)" }} />
 					</div>
 					<div className="min-w-0">
 						<p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
@@ -84,20 +69,7 @@ export default function SourcePanel({ document, page, onClose, onNavigate }: Sou
 						borderRadius: "var(--radius-md)",
 					}}
 				>
-					<svg
-						width="15"
-						height="15"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="2"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-					>
-						<title>Close</title>
-						<line x1="18" y1="6" x2="6" y2="18" />
-						<line x1="6" y1="6" x2="18" y2="18" />
-					</svg>
+					<X size={15} />
 				</button>
 			</div>
 
@@ -159,23 +131,7 @@ export default function SourcePanel({ document, page, onClose, onNavigate }: Sou
 								borderRadius: "var(--radius-md)",
 							}}
 						>
-							<svg
-								width="20"
-								height="20"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								strokeWidth="1.5"
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								className="mx-auto mb-2"
-							>
-								<title>No text</title>
-								<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-								<line x1="9" y1="9" x2="15" y2="9" />
-								<line x1="9" y1="13" x2="15" y2="13" />
-								<line x1="9" y1="17" x2="13" y2="17" />
-							</svg>
+							<FileX size={20} strokeWidth={1.5} className="mx-auto mb-2" />
 							This page has no extractable text.
 						</div>
 					)}
@@ -208,19 +164,7 @@ export default function SourcePanel({ document, page, onClose, onNavigate }: Sou
 						e.currentTarget.style.background = "transparent";
 					}}
 				>
-					<svg
-						width="14"
-						height="14"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="2"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-					>
-						<title>Previous</title>
-						<polyline points="15 18 9 12 15 6" />
-					</svg>
+					<ChevronLeft size={14} />
 					Prev
 				</button>
 
@@ -246,19 +190,7 @@ export default function SourcePanel({ document, page, onClose, onNavigate }: Sou
 					}}
 				>
 					Next
-					<svg
-						width="14"
-						height="14"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="2"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-					>
-						<title>Next</title>
-						<polyline points="9 18 15 12 9 6" />
-					</svg>
+					<ChevronRight size={14} />
 				</button>
 			</div>
 		</aside>

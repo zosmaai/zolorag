@@ -2,6 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { AlertCircle, AlertTriangle, LoaderCircle, X, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages, { type ChatMessageItem } from "@/components/ChatMessages";
@@ -24,6 +25,7 @@ export default function Home() {
 	const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [isIndexing, setIsIndexing] = useState(false);
+	const [loadError, setLoadError] = useState<string | null>(null);
 	const [messages, setMessages] = useState<ChatMessageItem[]>([]);
 	const [sourcePage, setSourcePage] = useState<number | null>(null);
 	const streamingIdRef = useRef<string | null>(null);
@@ -70,6 +72,7 @@ export default function Home() {
 			setMessages([]);
 			setSourcePage(null);
 			setIndexStatus(null);
+			setLoadError(null);
 			try {
 				const doc = await invoke<PdfDocument>("load_pdf", { path });
 				setCurrentDoc(doc);
@@ -90,6 +93,8 @@ export default function Home() {
 					]);
 				}
 			} catch (err) {
+				const msg = typeof err === "string" ? err : err instanceof Error ? err.message : "Failed to load PDF.";
+				setLoadError(msg);
 				console.warn("Load failed:", err);
 			}
 		},
@@ -272,6 +277,7 @@ export default function Home() {
 		setIndexStatus(null);
 		setMessages([]);
 		setSourcePage(null);
+		setLoadError(null);
 	}, []);
 
 	const handleSourceNavigate = useCallback((page: number) => {
@@ -332,20 +338,7 @@ export default function Home() {
 									borderRadius: "var(--radius-md)",
 								}}
 							>
-								<svg
-									width="15"
-									height="15"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									strokeWidth="2"
-									strokeLinecap="round"
-									strokeLinejoin="round"
-								>
-									<title>Close document</title>
-									<line x1="18" y1="6" x2="6" y2="18" />
-									<line x1="6" y1="6" x2="18" y2="18" />
-								</svg>
+								<X size={15} />
 							</button>
 						</>
 					)}
@@ -367,6 +360,33 @@ export default function Home() {
 					{!hasDocument && setupComplete && (
 						<div className="flex-1 flex items-center justify-center" style={{ padding: "var(--space-10)" }}>
 							<div className="w-full" style={{ maxWidth: "440px" }}>
+								{loadError && (
+									<div
+										className="flex items-start gap-3 mb-4 text-sm animate-fade-in"
+										style={{
+											background: "var(--bg-danger-subtle)",
+											border: "1px solid var(--bg-danger-subtle)",
+											borderRadius: "var(--radius-lg)",
+											color: "var(--text-danger)",
+											padding: "14px 16px",
+										}}
+									>
+										<AlertTriangle size={18} strokeWidth={2} className="shrink-0 mt-0.5" />
+										<div className="flex-1 leading-relaxed">
+											<strong className="font-semibold">Couldn&rsquo;t load PDF</strong>
+											<p className="mt-1" style={{ color: "var(--text-danger)" }}>
+												{loadError}
+											</p>
+										</div>
+										<button
+											type="button"
+											onClick={() => setLoadError(null)}
+											className="shrink-0 p-1 rounded transition-all hover:opacity-70 active:scale-90"
+										>
+											<XCircle size={16} />
+										</button>
+									</div>
+								)}
 								<DropZone onBrowse={handleBrowse} />
 							</div>
 						</div>
@@ -400,21 +420,12 @@ export default function Home() {
 										}}
 									>
 										<div className="flex items-center gap-3 text-sm">
-											<svg
+											<LoaderCircle
 												className="animate-spin-slow shrink-0"
-												width="18"
-												height="18"
-												viewBox="0 0 24 24"
-												fill="none"
-												stroke="currentColor"
-												strokeWidth="2.5"
-												strokeLinecap="round"
-												strokeLinejoin="round"
+												size={18}
+												strokeWidth={2.5}
 												style={{ color: "var(--text-accent)" }}
-											>
-												<title>Loading</title>
-												<path d="M21 12a9 9 0 1 1-6.219-8.56" />
-											</svg>
+											/>
 											<div className="flex-1">
 												<span className="font-medium" style={{ color: "var(--text-primary)" }}>
 													Preparing your document...
@@ -448,21 +459,7 @@ export default function Home() {
 											padding: "14px 18px",
 										}}
 									>
-										<svg
-											width="16"
-											height="16"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											strokeWidth="2"
-											strokeLinecap="round"
-											strokeLinejoin="round"
-										>
-											<title>Status</title>
-											<circle cx="12" cy="12" r="10" />
-											<line x1="12" y1="8" x2="12" y2="12" />
-											<line x1="12" y1="16" x2="12.01" y2="16" />
-										</svg>
+										<AlertCircle size={16} />
 										<span>
 											{!modelReady
 												? "Just a moment, still getting ready..."
