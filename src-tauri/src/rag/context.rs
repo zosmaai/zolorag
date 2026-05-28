@@ -78,6 +78,68 @@ impl ContextBuilder {
         messages
     }
 
+    /// Build a single prompt string for llama.cpp (in-process LLM).
+    ///
+    /// Uses the Llama 3 instruct chat template format:
+    /// ```text
+    /// <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+    ///
+    /// ...system prompt + context...<|eot_id|>
+    /// <|start_header_id|>user<|end_header_id|>
+    ///
+    /// ...query...<|eot_id|>
+    /// <|start_header_id|>assistant<|end_header_id|>
+    ///
+    /// ```
+    pub fn build_prompt(
+        &self,
+        query: &str,
+        chunks: &[SearchResult],
+        history: &[ChatMessage],
+    ) -> String {
+        let mut prompt = String::new();
+        prompt.push_str("<|begin_of_text|>");
+
+        // 1. System + context
+        let context_str = self.format_context(chunks);
+        prompt.push_str("<|start_header_id|>system<|end_header_id|>\n\n");
+        if context_str.is_empty() {
+            prompt.push_str(&self.system_prompt);
+        } else {
+            prompt.push_str(&format!(
+                "{}\n\nContext:\n{}",
+                self.system_prompt, context_str
+            ));
+        }
+        prompt.push_str("<|eot_id|>");
+
+        // 2. History (include recent turns for follow-up context)
+        for msg in history.iter() {
+            if matches!(msg.role, Role::User) && msg.content == query {
+                continue;
+            }
+            let role_tag = match msg.role {
+                Role::User => "user",
+                Role::Assistant => "assistant",
+            };
+            prompt.push_str(&format!(
+                "<|start_header_id|>{}<|end_header_id|>\n\n{}<|eot_id|>",
+                role_tag, msg.content
+            ));
+        }
+
+        // 3. Current query
+        prompt.push_str(&format!(
+            "<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|>",
+            query
+        ));
+
+        // 4. Assistant prefix
+        prompt.push_str("<|start_header_id|>assistant<|end_header_id|>\n\n");
+
+        prompt
+    }
+
     /// Format chunks into a readable context block with page markers.
     fn format_context(&self, chunks: &[SearchResult]) -> String {
         let mut context = String::new();

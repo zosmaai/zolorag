@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+default-run = "zolo-rag"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -30,7 +31,18 @@ lopdf = "0.34"
 unicode-segmentation = "1"
 log = "0.4"
 env_logger = "0.11"
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 bincode = "1"
-futures = "0.3"
+candle-core = "0.8"
+candle-nn = "0.8"
+candle-transformers = "0.8"
+tokenizers = "0.21"
+hf-hub = "0.4"
+dirs-next = "2"
+tokio = { version = "1", features = ["rt", "macros"] }
+llama-cpp-2 = "0.1.146"
+encoding_rs = "0.8"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
 

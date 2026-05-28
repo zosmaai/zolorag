@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages, { type ChatMessageItem } from "@/components/ChatMessages";
 import DropZone from "@/components/DropZone";
-import ModelBanner from "@/components/ModelBanner";
+import SetupPanel from "@/components/SetupPanel";
 import SourcePanel from "@/components/SourcePanel";
 import type { IndexStatus, IndexSummary, PdfDocument, SearchResult } from "@/types";
 
@@ -21,10 +21,12 @@ export default function Home() {
 	const [currentDoc, setCurrentDoc] = useState<PdfDocument | null>(null);
 	const [statusMessage, setStatusMessage] = useState("");
 
+	// Setup state — shown until both models are ready
+	const [setupComplete, setSetupComplete] = useState(false);
+
 	// Phase 2 state
 	const [modelReady, setModelReady] = useState(false);
 	const [llmReady, setLlmReady] = useState(false);
-	const [pullingLlm, setPullingLlm] = useState(false);
 	const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null);
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [isIndexing, setIsIndexing] = useState(false);
@@ -168,42 +170,31 @@ export default function Home() {
 	}, [loadPdfByPath]);
 
 	// -----------------------------------------------------------------------
-	// Check LLM model availability
+	// Refresh both model statuses from backend
 	// -----------------------------------------------------------------------
-	const checkLlmModel = useCallback(async () => {
+	const refreshModelStatus = useCallback(async () => {
 		try {
-			const status = await invoke<{ ready: boolean; message: string }>("check_llm_model");
-			setLlmReady(status.ready);
-			if (!status.ready) {
-				setStatusMessage(`LLM: ${status.message}`);
-			}
+			const s = await invoke<{ ready: boolean }>("check_model");
+			setModelReady(s.ready);
+		} catch {
+			setModelReady(false);
+		}
+		try {
+			const s = await invoke<{ ready: boolean }>("check_llm_model");
+			setLlmReady(s.ready);
 		} catch {
 			setLlmReady(false);
 		}
 	}, []);
 
-	const handlePullLlm = useCallback(async () => {
-		setPullingLlm(true);
-		setStatusMessage("Pulling LLM model (llama3.2:3b)...");
-		try {
-			await invoke("pull_llm_model");
-			await checkLlmModel();
-			setStatusMessage("LLM model ready!");
-		} catch (err) {
-			setStatusMessage(`Failed to pull LLM model: ${err}`);
-		} finally {
-			setPullingLlm(false);
-		}
-	}, [checkLlmModel]);
-
 	// -----------------------------------------------------------------------
-	// Load existing index on startup
+	// Check models on startup + restore index
 	// -----------------------------------------------------------------------
 	useEffect(() => {
 		const init = async () => {
-			// Check LLM model on startup
-			checkLlmModel();
+			await refreshModelStatus();
 
+			// Try to restore existing index
 			try {
 				const summary = await invoke<IndexSummary | null>("load_index");
 				if (summary) {
@@ -216,7 +207,14 @@ export default function Home() {
 			}
 		};
 		init();
-	}, [checkLlmModel]);
+	}, [refreshModelStatus]);
+
+	// When both models become ready, mark setup as complete
+	useEffect(() => {
+		if (modelReady && llmReady) {
+			setSetupComplete(true);
+		}
+	}, [modelReady, llmReady]);
 
 	// -----------------------------------------------------------------------
 	// Ask question (Phase 3 — streaming LLM answer)
@@ -323,20 +321,6 @@ export default function Home() {
 		setSourcePage(result.page);
 	}, []);
 
-	// Check LLM model when embedding model becomes ready
-	useEffect(() => {
-		if (modelReady) {
-			checkLlmModel();
-		}
-	}, [modelReady, checkLlmModel]);
-
-	// -----------------------------------------------------------------------
-	// Model readiness callback
-	// -----------------------------------------------------------------------
-	const handleModelChange = useCallback((ready: boolean) => {
-		setModelReady(ready);
-	}, []);
-
 	// -----------------------------------------------------------------------
 	// Close document
 	// -----------------------------------------------------------------------
@@ -434,8 +418,6 @@ export default function Home() {
 							</button>
 						</>
 					)}
-
-					<ModelBanner onStatusChange={handleModelChange} />
 				</div>
 			</header>
 
@@ -443,8 +425,16 @@ export default function Home() {
 			<div className="flex-1 flex overflow-hidden">
 				{/* Main chat column */}
 				<div className="flex-1 flex flex-col min-w-0">
-					{/* Empty state */}
-					{!hasDocument && (
+					{/* Empty state: setup panel or drop zone */}
+					{!hasDocument && !setupComplete && (
+						<SetupPanel
+							onComplete={() => {
+								setSetupComplete(true);
+								refreshModelStatus();
+							}}
+						/>
+					)}
+					{!hasDocument && setupComplete && (
 						<div className="flex-1 flex items-center justify-center p-8">
 							<div className="w-full max-w-md">
 								<DropZone onBrowse={handleBrowse} />
@@ -461,50 +451,6 @@ export default function Home() {
 								onResultClick={handleResultClick}
 								currentDocName={currentDoc?.file_name}
 							/>
-
-							{/* LLM download banner */}
-							{!llmReady && hasDocument && indexStatus && !isIndexing && (
-								<div
-									className="flex items-center gap-2 px-4 py-2 mx-4 mb-2 rounded-lg text-xs"
-									style={{
-										background: "var(--bg-warning-subtle)",
-										color: "var(--text-warning)",
-									}}
-								>
-									<svg
-										width="12"
-										height="12"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										strokeWidth="2"
-										strokeLinecap="round"
-										strokeLinejoin="round"
-									>
-										<title>Warning</title>
-										<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-										<line x1="12" y1="9" x2="12" y2="13" />
-										<line x1="12" y1="17" x2="12.01" y2="17" />
-									</svg>
-									<span className="flex-1">LLM model not available. Download llama3.2:3b to enable AI answers.</span>
-									{!pullingLlm && (
-										<button
-											type="button"
-											onClick={handlePullLlm}
-											className="px-2.5 py-1 rounded text-xs font-medium"
-											style={{ background: "var(--bg-accent)", color: "white" }}
-										>
-											Download LLM (~2GB)
-										</button>
-									)}
-									{pullingLlm && (
-										<div className="flex items-center gap-1">
-											<div className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
-											<span>Downloading...</span>
-										</div>
-									)}
-								</div>
-							)}
 
 							{/* Input area */}
 							<div className="shrink-0 px-4 pb-3 pt-2">
@@ -540,7 +486,7 @@ export default function Home() {
 											: !indexStatus
 												? "No index found. Try re-loading the document."
 												: !llmReady
-													? "LLM model not ready. Download above to ask questions."
+													? "LLM model not ready."
 													: "Something isn't ready yet."}
 									</div>
 								)}

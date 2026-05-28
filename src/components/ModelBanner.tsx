@@ -23,13 +23,13 @@ export default function ModelBanner({ onStatusChange }: ModelBannerProps) {
 		}
 	}, [onStatusChange]);
 
-	const handlePull = async () => {
+	const handleInit = async () => {
 		setIsPulling(true);
 		try {
-			await invoke("pull_embedding_model");
+			await invoke("init_candle_encoder");
 			await checkStatus();
 		} catch (err) {
-			setStatus({ ready: false, message: `Pull failed: ${err}` });
+			setStatus({ ready: false, message: `Init failed: ${err}` });
 		} finally {
 			setIsPulling(false);
 		}
@@ -71,7 +71,7 @@ export default function ModelBanner({ onStatusChange }: ModelBannerProps) {
 					<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
 					<polyline points="22 4 12 14.01 9 11.01" />
 				</svg>
-				<span style={{ color: "var(--text-success)" }}>Embedding model ready</span>
+				<span style={{ color: "var(--text-success)" }}>{status.message}</span>
 			</div>
 		);
 	}
@@ -103,20 +103,20 @@ export default function ModelBanner({ onStatusChange }: ModelBannerProps) {
 			{!isPulling && (
 				<button
 					type="button"
-					onClick={handlePull}
+					onClick={handleInit}
 					className="px-2 py-0.5 rounded text-xs font-medium transition-colors"
 					style={{
 						background: "var(--bg-accent)",
 						color: "white",
 					}}
 				>
-					Pull Model
+					Download Model
 				</button>
 			)}
 			{isPulling && (
 				<div className="flex items-center gap-1">
 					<div className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
-					<span>Pulling...</span>
+					<span>Downloading...</span>
 				</div>
 			)}
 		</div>
