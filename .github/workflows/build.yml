@@ -36,7 +36,7 @@ jobs:
         run: pnpm install
 
       - name: Build Tauri app bundle (macOS, unsigned)
-        run: pnpm tauri build --no-bundle --no-sign
+        run: pnpm tauri build --no-sign
 
       - name: Ad-hoc sign the app bundle
         run: |
