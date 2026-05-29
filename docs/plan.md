@@ -155,13 +155,15 @@ Chosen because it's what AskBit uses, 384-dim is optimal for bit packing (6 × u
 - ~3 GB download for the LLM on first run (need good UX with progress, pause/resume)
 - RAM usage: ~2-4 GB for a 3B Q4 model (need to ensure other apps can coexist)
 
-### Phase C: Mobile — EXPLICITLY DEFERRED
+### Phase C: Mobile — Phase 6 (Android)
 
-> **Not in scope. Will not be built until the desktop version has proven product-market fit.**
-> Prerequisites for even discussing mobile:
-> 1. zoloRAG has 1,000+ active desktop users
-> 2. The desktop bundling pipeline (Phase A + B) is stable across Windows, macOS, Linux
-> 3. User feedback clearly demands a mobile version
+See [`docs/phases/phase-6.md`](docs/phases/phase-6.md) for the full plan. The core ML stack (candle + llama.cpp) already cross-compiles for `aarch64-linux-android`, and Tauri 2 provides native Android support. Phase 6 covers:
+
+1. Android toolchain + cross-compilation of the Rust + C++ stack
+2. Mobile UI redesign (touch interactions, file picker / share sheet instead of drag-and-drop)
+3. PDF file handling via Android content URIs
+4. Performance tuning (smaller default LLM model, background thread inference)
+5. CI pipeline for automated APK builds
 >
 > Until then, every engineering hour goes into making the desktop experience flawless.
 
@@ -192,7 +194,7 @@ Chosen because it's what AskBit uses, 384-dim is optimal for bit packing (6 × u
 | Item | Why | Path Forward |
 |------|-----|-------------|
 | **Bundle LLM in installer (~2 GB)** | Installer would be 2+ GB. Users won't download it. | Download on first launch (like Ollama does). Show clear size + progress upfront. |
-| **Mobile support** | Mobile is not in scope. Desktop PMF first. | Revisit after 1000+ desktop users. |
+| **Mobile support** | Requires full UI redesign, Android NDK toolchain, content URI handling, and performance tuning on phone-class hardware. | See [`docs/phases/phase-6.md`](docs/phases/phase-6.md) — Phase 6 is the dedicated mobile track. |
 
 ---
 
@@ -254,15 +256,15 @@ Users won't tolerate downloading gigabytes before they can try the app. Strategy
 | Query latency (LLM) | ~100ms first token + HTTP | ~50ms first token (native) |
 | RAM overhead | Ollama keeps model loaded (+~3 GB) | Single process, same RAM |
 | CPU overhead | 2 processes, IPC scheduling | 1 process, no IPC |
-| Mobile support | ❌ Not possible | ❌ Not in scope (desktop first) |
+| Mobile support | ❌ Not possible | ✅ Phase 6 (Android via Tauri 2) |
 | Installer size | ~6 MB (app only) | ~6 MB + 85 MB (embedding model) |
 | First-run download | User pulls 2 models manually | Automatic download with UI |
 | Build complexity | Simple (HTTP calls) | Medium (C++ ML libs + Rust FFI) |
 
 ---
 
-> 🎯 **TARGET USER:** Office worker with a mid-range Windows laptop (8-16 GB RAM, 4-8 cores, no GPU).
-> **NOT targeting:** Mobile, Raspberry Pi, low-RAM machines (<4 GB), GPU-accelerated setups.
+> 🎯 **TARGET USER:** Office worker with a mid-range Windows laptop (8-16 GB RAM, 4-8 cores, no GPU). Desktop is the primary target. Phase 6 extends to Android mobile — see [`docs/phases/phase-6.md`](docs/phases/phase-6.md).
+> **NOT targeting:** Raspberry Pi, low-RAM machines (<4 GB), GPU-accelerated setups.
 > **Windows is the primary target.** macOS and Linux follow, but Windows 10/11 office PCs are where the need is greatest and the testing must be most thorough.
 
 ## What Stays the Same
