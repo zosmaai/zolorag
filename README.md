@@ -127,6 +127,15 @@ To trigger a build manually:
 
 > **Note:** Cross-compilation isn't supported — each platform must build natively because `llama-cpp-sys` compiles platform-specific C++ code (llama.cpp). The CI workflow runs on native GitHub runners for each OS.
 
+> **macOS Gatekeeper:** The CI build is ad-hoc signed (no Apple Developer ID certificate). The first time you open the downloaded `.dmg` installer, macOS may show "Apple could not verify ZoloRAG is free of malware." This is expected — try one of these to bypass:
+>
+> 1. **Right-click (Ctrl+click) the app → Open → click Open** — this adds a one-time Gatekeeper exception. You only need to do this once per download.
+> 2. If the right-click method does **not** work (e.g., Gatekeeper still blocks it even after clicking "Open"), remove the quarantine attribute directly:
+>    ```bash
+>    xattr -dr com.apple.quarantine /Applications/ZoloRAG.app
+>    ```
+>    This strips the "downloaded from the internet" flag that triggers Gatekeeper. After running it, you can open the app normally.
+
 ---
 
 ## Tech Stack
