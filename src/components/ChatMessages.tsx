@@ -64,7 +64,7 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 						<MessageCircle size={26} style={{ color: "var(--text-accent)" }} />
 					</div>
 					<p className="text-lg font-semibold text-center" style={{ color: "var(--text-primary)" }}>
-						Welcome Tiramisu
+						Welcome
 					</p>
 					<p className="text-sm leading-relaxed text-center" style={{ color: "var(--text-secondary)" }}>
 						{currentDocName
