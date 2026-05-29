@@ -36,7 +36,14 @@ jobs:
         run: pnpm install
 
       - name: Build Tauri app bundle (macOS, unsigned)
-        run: pnpm tauri build --no-sign
+        env:
+          CARGO_HTTP_MULTIPLEXING: "false"
+        run: |
+          for i in 1 2 3; do
+            pnpm tauri build --no-sign && break
+            echo "Attempt $i failed. Retrying in 10s..."
+            sleep 10
+          done
 
       - name: Ad-hoc sign the app bundle
         run: |
