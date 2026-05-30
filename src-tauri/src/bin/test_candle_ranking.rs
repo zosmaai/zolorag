@@ -1,9 +1,13 @@
 //! Test CandleEncoder end-to-end: index PDF, run queries, display results.
 //!
 //! Usage: cargo run --bin test_candle_ranking --release -- /path/to/resume.pdf
+//!
+//! Only builds when the `ml` feature is enabled.
 
-use hf_hub::api::sync::Api;
+#![cfg(feature = "ml")]
+
 use zolo_rag_lib::index::index::{BitIndex, ChunkInfo};
+use std::path::PathBuf;
 use zolo_rag_lib::ml::CandleEncoder;
 use zolo_rag_lib::pdf::chunk::chunk_document;
 use zolo_rag_lib::pdf::extract::extract_text;
@@ -32,8 +36,18 @@ fn main() -> Result<(), String> {
 
     // ── 2. Load CandleEncoder ──
     println!("🤖 Loading CandleEncoder (all-MiniLM-L6-v2)...");
-    let api = Api::new().map_err(|e| format!("HF Hub: {e}"))?;
-    let candle = CandleEncoder::new(&api)?;
+    let home = std::env::var("HOME").unwrap_or_default();
+    let model_dir = PathBuf::from(&home)
+        .join(".cache")
+        .join("huggingface")
+        .join("hub")
+        .join("models--sentence-transformers--all-MiniLM-L6-v2");
+    if !model_dir.exists() {
+        // Fall back to the ensure function which downloads if needed
+        let app_dir = PathBuf::from(&home).join(".cache").join("zolo-rag");
+        zolo_rag_lib::ml::download::ensure_embedding_model(&app_dir)?;
+    }
+    let candle = CandleEncoder::new(&model_dir)?;
     println!("   ✅ CandleEncoder ready\n");
 
     // ── 3. Build index ──

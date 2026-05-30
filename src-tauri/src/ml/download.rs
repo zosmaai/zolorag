@@ -1,16 +1,17 @@
-use hf_hub::api::sync::Api;
 use std::path::{Path, PathBuf};
+use std::io::{Read, Write};
 
 /// Default LLM model filename expected in the models directory.
 const LLM_MODEL_FILENAME: &str = "llama-3.2-3b-instruct-q4_k_m.gguf";
 
+/// Embedding model files to download from HuggingFace.
+const EMBEDDING_REPO: &str = "sentence-transformers/all-MiniLM-L6-v2";
+const EMBEDDING_FILES: &[&str] = &["config.json", "tokenizer.json", "model.safetensors"];
+
+/// Base URL for HuggingFace model downloads.
+const HF_BASE_URL: &str = "https://huggingface.co";
+
 /// Find the LLM GGUF model file path.
-///
-/// Looks for the expected GGUF file in `<app_dir>/models/`.
-/// Returns `Some(path)` if the file exists, `None` otherwise.
-///
-/// This is used by `check_llm_model` and `init_llm_engine` to
-/// determine if the model needs to be downloaded.
 pub fn find_llm_model_path(app_dir: &Path) -> Option<PathBuf> {
     let model_path = app_dir.join("models").join(LLM_MODEL_FILENAME);
     if model_path.exists() {
@@ -22,34 +23,18 @@ pub fn find_llm_model_path(app_dir: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Download the LLM GGUF model from HuggingFace with progress reporting.
-///
-/// Downloads to a temp file and renames on completion (atomic write).
-/// Emits progress via the callback: `(bytes_downloaded, total_bytes)`.
-pub fn download_llm_model(
-    app_dir: &Path,
-    mut on_progress: impl FnMut(u64, u64),
-) -> Result<PathBuf, String> {
-    let model_dir = app_dir.join("models");
-    std::fs::create_dir_all(&model_dir)
-        .map_err(|e| format!("Cannot create models dir: {e}"))?;
-
-    let dest = model_dir.join(LLM_MODEL_FILENAME);
-    if dest.exists() {
-        log::info!("LLM model already exists at {:?}", dest);
-        return Ok(dest);
-    }
-
-    // HuggingFace URL for Llama 3.2 3B Instruct Q4_K_M
-    let url = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf";
-
+/// Download a file from HuggingFace with optional resume and progress callback.
+fn download_file(
+    url: &str,
+    dest: &Path,
+    on_progress: &mut dyn FnMut(u64, u64),
+) -> Result<(), String> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("zoloRAG/1.0")
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
-    // Check if a partial download exists (for resume)
-    let temp_path = model_dir.join(format!("{}.partial", LLM_MODEL_FILENAME));
+    let temp_path = dest.with_extension("partial");
     let existing_size = std::fs::metadata(&temp_path).map(|m| m.len()).unwrap_or(0);
 
     let response = if existing_size > 0 {
@@ -67,10 +52,9 @@ pub fn download_llm_model(
     };
 
     if !response.status().is_success() {
-        return Err(format!("Download returned {}", response.status()));
+        return Err(format!("Download returned {} for {}", response.status(), url));
     }
 
-    // Get total file size (from Content-Range header for resumed, or Content-Length)
     let total_size: u64 = response
         .headers()
         .get("content-range")
@@ -86,9 +70,6 @@ pub fn download_llm_model(
         })
         .unwrap_or(0);
 
-    // Stream to temp file with progress
-    use std::io::{Read, Write};
-
     let mut temp_file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -96,10 +77,9 @@ pub fn download_llm_model(
         .map_err(|e| format!("Cannot open temp file: {e}"))?;
 
     let mut downloaded: u64 = existing_size;
-    let mut buffer = [0u8; 65536]; // 64 KB chunks
-
-    // Use the blocking response as a Read source
+    let mut buffer = [0u8; 65536];
     let mut reader = response;
+
     loop {
         let n = reader
             .read(&mut buffer)
@@ -114,98 +94,108 @@ pub fn download_llm_model(
         on_progress(downloaded, total_size);
     }
 
-    // Rename temp → final
-    std::fs::rename(&temp_path, &dest)
+    std::fs::rename(&temp_path, dest)
         .map_err(|e| format!("Failed to rename temp file: {e}"))?;
 
-    log::info!("LLM model downloaded to {:?} ({} bytes)", dest, downloaded);
+    log::info!("Downloaded {} ({} bytes)", dest.display(), downloaded);
+    Ok(())
+}
+
+/// Download the LLM GGUF model from HuggingFace with progress reporting.
+pub fn download_llm_model(
+    app_dir: &Path,
+    mut on_progress: impl FnMut(u64, u64),
+) -> Result<PathBuf, String> {
+    let model_dir = app_dir.join("models");
+    std::fs::create_dir_all(&model_dir)
+        .map_err(|e| format!("Cannot create models dir: {e}"))?;
+
+    let dest = model_dir.join(LLM_MODEL_FILENAME);
+    if dest.exists() {
+        log::info!("LLM model already exists at {:?}", dest);
+        return Ok(dest);
+    }
+
+    let url = format!(
+        "{}/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        HF_BASE_URL
+    );
+
+    download_file(&url, &dest, &mut on_progress)?;
+
     Ok(dest)
 }
 
-/// Ensure the embedding model is available locally.
+/// Ensure the embedding model files are available locally.
 ///
-/// Uses `hf-hub` to download `sentence-transformers/all-MiniLM-L6-v2` from
-/// HuggingFace Hub into the local cache (`~/.cache/huggingface/hub/`).
+/// Downloads the three essential files (config.json, tokenizer.json, model.safetensors)
+/// from HuggingFace into the app's models directory. Uses a marker file to track
+/// completion so subsequent calls are instant.
 ///
-/// Returns the model directory path on success. This is a **blocking** call;
-/// the actual download only happens on the first invocation — subsequent calls
-/// are instant (cached).
-///
-/// # Errors
-///
-/// Returns an error if:
-/// - The HuggingFace Hub API is unreachable (no internet)
-/// - The model repository does not exist or access is denied
-/// - Disk I/O fails during caching
-///
-/// # Progress
-///
-/// `hf-hub` does not expose per-file progress, but the download is cached so
-/// it only matters once. For the purpose of Phase 4, a simple two-phase
-/// progress indicator (checking cache → downloading) is sufficient.
+/// Returns the model directory path on success.
 pub fn ensure_embedding_model(app_dir: &Path) -> Result<PathBuf, String> {
-    // Use hf-hub's built-in cache (~/.cache/huggingface/hub/ by default).
-    // We create the API and trigger a model lookup — if cached, it's instant;
-    // otherwise it downloads.
-    let api = Api::new().map_err(|e| format!("Failed to init HF Hub API: {e}"))?;
-    let repo = api.model("sentence-transformers/all-MiniLM-L6-v2".to_string());
+    let model_dir = app_dir.join("models").join(EMBEDDING_REPO);
+    std::fs::create_dir_all(&model_dir)
+        .map_err(|e| format!("Cannot create models dir: {e}"))?;
 
-    // Download the essential files (triggers caching). We call `get` which
-    // returns the local path after ensuring the file is present.
-    let _config = repo
-        .get("config.json")
-        .map_err(|e| format!("Failed to download config.json: {e}"))?;
-    let _tokenizer = repo
-        .get("tokenizer.json")
-        .map_err(|e| format!("Failed to download tokenizer.json: {e}"))?;
-    let _weights = repo
-        .get("model.safetensors")
-        .map_err(|e| format!("Failed to download model.safetensors: {e}"))?;
-
-    // Also write a marker file in the app directory indicating the model is ready
-    let model_marker = app_dir.join("models").join(".candle_embedding_ready");
-    if let Some(parent) = model_marker.parent() {
-        let _ = std::fs::create_dir_all(parent);
+    // Check if already fully downloaded via marker file
+    let marker = model_dir.join(".downloaded");
+    if marker.exists() {
+        log::info!("Embedding model already cached at {:?}", model_dir);
+        return Ok(model_dir);
     }
-    let _ = std::fs::write(&model_marker, b"all-MiniLM-L6-v2");
 
-    log::info!("Embedding model ensured locally via hf-hub cache");
-    Ok(app_dir.join("models"))
+    for filename in EMBEDDING_FILES {
+        let dest = model_dir.join(filename);
+        if dest.exists() {
+            continue;
+        }
+
+        let url = format!(
+            "{}/{}/resolve/main/{}",
+            HF_BASE_URL, EMBEDDING_REPO, filename
+        );
+
+        log::info!("Downloading embedding model file: {}", filename);
+        // No progress callback for these small files
+        download_file(&url, &dest, &mut |_, _| {})?;
+    }
+
+    // Write marker file
+    std::fs::write(&marker, b"all-MiniLM-L6-v2")
+        .map_err(|e| format!("Failed to write marker file: {e}"))?;
+
+    log::info!("Embedding model ready at {:?}", model_dir);
+    Ok(model_dir)
 }
 
-/// Check if the embedding model has been downloaded and cached.
-///
-/// Returns `true` if `model.safetensors` exists in the HuggingFace cache
-/// OR if the marker file exists in the app data dir.
-///
-/// hf-hub caches under `~/.cache/huggingface/hub/` (Linux convention, even on macOS).
-/// The `dirs_next::cache_dir()` on macOS returns `~/Library/Caches/` which is WRONG
-/// — hf-hub uses `~/.cache/` regardless of platform.
+/// Check if the embedding model has been downloaded.
 pub fn is_embedding_model_cached() -> bool {
     let home = std::env::var("HOME").unwrap_or_default();
+    let model_dir = PathBuf::from(&home)
+        .join(".cache")
+        .join("huggingface")
+        .join("hub")
+        .join("models--sentence-transformers--all-MiniLM-L6-v2");
 
-    // hf-hub's actual cache location: ~/.cache/huggingface/hub/
-    let cache_dir = PathBuf::from(&home).join(".cache").join("huggingface").join("hub");
-    let model_cache = cache_dir.join("models--sentence-transformers--all-MiniLM-L6-v2");
-
-    if !model_cache.exists() {
-        return false;
+    if model_dir.join(".downloaded").exists() {
+        return true;
     }
 
-    // Check for safetensors in any snapshot subdirectory
-    let snapshots_dir = model_cache.join("snapshots");
-    if !snapshots_dir.exists() {
-        return false;
-    }
-
-    std::fs::read_dir(&snapshots_dir)
-        .map(|entries| {
-            entries.filter_map(|e| e.ok()).any(|e| {
-                let snap = e.path();
-                snap.is_dir() && snap.join("model.safetensors").exists()
+    // Also check snapshots dir (legacy hf-hub cache structure)
+    let snapshots_dir = model_dir.join("snapshots");
+    if snapshots_dir.exists() {
+        std::fs::read_dir(&snapshots_dir)
+            .map(|entries| {
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    let snap = e.path();
+                    snap.is_dir() && snap.join("model.safetensors").exists()
+                })
             })
-        })
-        .unwrap_or(false)
+            .unwrap_or(false)
+    } else {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -214,7 +204,6 @@ mod tests {
 
     #[test]
     fn test_is_cached_does_not_panic() {
-        // Just ensure the function runs without panicking
         let _ = is_embedding_model_cached();
     }
 }

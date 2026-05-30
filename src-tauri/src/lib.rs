@@ -7,6 +7,7 @@ use index::{
     BitIndex, ChunkInfo, EncodedVector,
     IndexStatus, IndexSummary, ModelStatus, SearchResult,
 };
+#[cfg(feature = "ml")]
 use ml::{CandleEncoder, LlamaCppEngine};
 use pdf::chunk::Chunk;
 use pdf::extract::PdfDocument;
@@ -23,11 +24,13 @@ struct AppState {
     current_document: Mutex<Option<PdfDocument>>,
     current_chunks: Mutex<Vec<Chunk>>,
     bit_index: Mutex<Option<BitIndex>>,
+    #[cfg(feature = "ml")]
     candle_encoder: Mutex<Option<CandleEncoder>>,
     index_path: Mutex<Option<PathBuf>>,
     // Phase 3
     chat_history: Mutex<ChatHistory>,
     context_builder: ContextBuilder,
+    #[cfg(feature = "ml")]
     llm_engine: Mutex<Option<LlamaCppEngine>>,
     last_sources: Mutex<Vec<SearchResult>>,
 }
@@ -36,7 +39,7 @@ struct AppState {
 // Encoder Resolution
 // ---------------------------------------------------------------------------
 
-/// Get the candle encoder, auto-loading from cache if needed.
+#[cfg(feature = "ml")]
 fn ensure_encoder(app: &tauri::AppHandle, state: &AppState) -> Result<(), String> {
     let guard = state.candle_encoder.lock().map_err(|e| e.to_string())?;
     if guard.is_some() {
@@ -50,11 +53,8 @@ fn ensure_encoder(app: &tauri::AppHandle, state: &AppState) -> Result<(), String
         .map_err(|e| format!("Cannot resolve app data dir: {e}"))?;
 
     drop(guard); // release lock before loading
-    ml::download::ensure_embedding_model(&app_dir)?;
-
-    let api = hf_hub::api::sync::Api::new()
-        .map_err(|e| format!("Failed to init HF Hub API: {e}"))?;
-    let encoder = CandleEncoder::new(&api)?;
+    let model_dir = ml::download::ensure_embedding_model(&app_dir)?;
+    let encoder = CandleEncoder::new(&model_dir)?;
 
     log::info!("CandleEncoder auto-loaded from cache");
     let _ = app.emit("rag:embedding-ready", true);
@@ -63,7 +63,7 @@ fn ensure_encoder(app: &tauri::AppHandle, state: &AppState) -> Result<(), String
     Ok(())
 }
 
-/// Encode using the candle encoder (auto-loading if needed).
+#[cfg(feature = "ml")]
 fn encode_with_auto_load(
     app: &tauri::AppHandle,
     state: &AppState,
@@ -80,7 +80,7 @@ fn encode_with_auto_load(
 // Phase 4 Commands (Candle encoder lifecycle)
 // ---------------------------------------------------------------------------
 
-/// Initialize the candle encoder (download model + load into memory).
+#[cfg(feature = "ml")]
 #[tauri::command]
 async fn init_candle_encoder(app: tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
@@ -93,11 +93,7 @@ async fn init_candle_encoder(app: tauri::AppHandle) -> Result<(), String> {
 // Phase 5 Commands (LLM engine lifecycle)
 // ---------------------------------------------------------------------------
 
-/// Initialize the LLM engine (download GGUF + load into memory).
-///
-/// Downloads the Llama 3.2 3B Instruct Q4_K_M GGUF from HuggingFace
-/// if not already cached, then loads it via `LlamaCppEngine`.
-/// Emits `rag:download-progress` events during download.
+#[cfg(feature = "ml")]
 #[tauri::command]
 async fn init_llm_engine(app: tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<AppState>();
@@ -172,6 +168,7 @@ fn get_chunks(state: State<AppState>) -> Result<Vec<Chunk>, String> {
 // Phase 2 Commands
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "ml")]
 #[tauri::command]
 async fn check_model(app: tauri::AppHandle) -> Result<ModelStatus, String> {
     // Check if candle encoder is already loaded
@@ -195,12 +192,14 @@ async fn check_model(app: tauri::AppHandle) -> Result<ModelStatus, String> {
     })
 }
 
+#[cfg(feature = "ml")]
 #[tauri::command]
 async fn pull_embedding_model(app: tauri::AppHandle) -> Result<(), String> {
     // Delegate to init_candle_encoder which handles download + load
     init_candle_encoder(app).await
 }
 
+#[cfg(feature = "ml")]
 #[tauri::command]
 async fn index_document(
     app: tauri::AppHandle,
@@ -287,6 +286,7 @@ async fn load_index(
     }
 }
 
+#[cfg(feature = "ml")]
 #[tauri::command]
 async fn query_index(
     app: tauri::AppHandle,
@@ -338,13 +338,7 @@ fn get_index_status(state: State<AppState>) -> Result<IndexStatus, String> {
 // Phase 3 Commands
 // ---------------------------------------------------------------------------
 
-/// Ask a question: retrieve chunks → build context → stream LLM answer via events.
-///
-/// Events emitted:
-/// - `rag:token` (String) — each token from the LLM
-/// - `rag:sources` (Vec<SearchResult>) — source chunks used
-/// - `rag:done` (String) — full answer text
-/// - `rag:error` (String) — error message
+#[cfg(feature = "ml")]
 #[tauri::command]
 async fn ask_question(
     query: String,
@@ -495,7 +489,6 @@ fn get_chat_history(state: State<AppState>) -> Result<Vec<rag::ChatMessage>, Str
     Ok(messages)
 }
 
-/// Check if the LLM model GGUF file exists on disk.
 #[tauri::command]
 async fn check_llm_model(app: tauri::AppHandle) -> Result<ModelStatus, String> {
     let app_dir = app
@@ -519,11 +512,7 @@ async fn check_llm_model(app: tauri::AppHandle) -> Result<ModelStatus, String> {
     })
 }
 
-/// Download and load the LLM GGUF model.
-///
-/// Delegates to `init_llm_engine` which handles both download and
-/// initialization. This is the command the frontend calls from
-/// the "Download LLM" button.
+#[cfg(feature = "ml")]
 #[tauri::command]
 async fn pull_llm_model(app: tauri::AppHandle) -> Result<(), String> {
     init_llm_engine(app).await
@@ -549,10 +538,12 @@ pub fn run() {
             current_document: Mutex::new(None),
             current_chunks: Mutex::new(Vec::new()),
             bit_index: Mutex::new(None),
+            #[cfg(feature = "ml")]
             candle_encoder: Mutex::new(None),
             index_path: Mutex::new(None),
             chat_history: Mutex::new(chat_history),
             context_builder,
+            #[cfg(feature = "ml")]
             llm_engine: Mutex::new(None),
             last_sources: Mutex::new(Vec::new()),
         })
@@ -561,22 +552,30 @@ pub fn run() {
             load_pdf,
             get_chunks,
             // Phase 2
+            #[cfg(feature = "ml")]
             check_model,
+            #[cfg(feature = "ml")]
             pull_embedding_model,
+            #[cfg(feature = "ml")]
             index_document,
             load_index,
+            #[cfg(feature = "ml")]
             query_index,
             get_index_status,
             // Phase 3
+            #[cfg(feature = "ml")]
             ask_question,
             get_sources,
             clear_chat,
             get_chat_history,
             // Phase 4
+            #[cfg(feature = "ml")]
             init_candle_encoder,
             // Phase 5
+            #[cfg(feature = "ml")]
             init_llm_engine,
             check_llm_model,
+            #[cfg(feature = "ml")]
             pull_llm_model,
         ])
         .run(tauri::generate_context!())

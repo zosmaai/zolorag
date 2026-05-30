@@ -1,7 +1,6 @@
 use candle_core::{Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{BertModel, Config as BertConfig};
-use hf_hub::api::sync::Api;
 use tokenizers::Tokenizer;
 
 use crate::index::index::BitVector;
@@ -20,19 +19,17 @@ pub struct CandleEncoder {
 }
 
 impl CandleEncoder {
-    /// Load the model from HuggingFace Hub (cached on subsequent runs).
+    /// Load the model from the directory returned by `ensure_embedding_model`.
     ///
-    /// The model files (config.json, tokenizer.json, model.safetensors) are
-    /// downloaded on first call via `hf-hub` and cached in
-    /// `~/.cache/huggingface/hub/`.
-    pub fn new(api: &Api) -> Result<Self, String> {
+    /// Expects the following files in `model_dir`:
+    /// - config.json
+    /// - tokenizer.json
+    /// - model.safetensors
+    pub fn new(model_dir: &std::path::Path) -> Result<Self, String> {
         let device = Device::Cpu;
-        let repo = api.model("sentence-transformers/all-MiniLM-L6-v2".to_string());
 
         // --- Load config ---
-        let config_path = repo
-            .get("config.json")
-            .map_err(|e| format!("Failed to fetch config.json from HF Hub: {e}"))?;
+        let config_path = model_dir.join("config.json");
         let config: BertConfig = serde_json::from_str(
             &std::fs::read_to_string(&config_path)
                 .map_err(|e| format!("Failed to read config.json: {e}"))?,
@@ -42,16 +39,12 @@ impl CandleEncoder {
         let max_seq_len = config.max_position_embeddings;
 
         // --- Load tokenizer ---
-        let tokenizer_path = repo
-            .get("tokenizer.json")
-            .map_err(|e| format!("Failed to fetch tokenizer.json from HF Hub: {e}"))?;
+        let tokenizer_path = model_dir.join("tokenizer.json");
         let tokenizer = Tokenizer::from_file(tokenizer_path)
             .map_err(|e| format!("Failed to load tokenizer: {e}"))?;
 
         // --- Load weights ---
-        let weights_path = repo
-            .get("model.safetensors")
-            .map_err(|e| format!("Failed to fetch model.safetensors from HF Hub: {e}"))?;
+        let weights_path = model_dir.join("model.safetensors");
 
         // SAFETY: `from_mmaped_safetensors` mmaps the file; this is the standard
         // pattern used in all candle examples and benchmarks.

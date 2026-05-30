@@ -31,17 +31,26 @@ lopdf = "0.34"
 unicode-segmentation = "1"
 log = "0.4"
 env_logger = "0.11"
-reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "blocking", "rustls-tls"] }
 bincode = "1"
-candle-core = "0.8"
-candle-nn = "0.8"
-candle-transformers = "0.8"
-tokenizers = "0.21"
-hf-hub = "0.4"
+candle-core = { version = "0.8", optional = true }
+candle-nn = { version = "0.8", optional = true }
+candle-transformers = { version = "0.8", optional = true }
+tokenizers = { version = "0.21", optional = true }
 dirs-next = "2"
 tokio = { version = "1", features = ["rt", "macros"] }
-llama-cpp-2 = "0.1.146"
+llama-cpp-2 = { version = "0.1.146", optional = true }
 encoding_rs = "0.8"
+
+[features]
+default = ["ml"]
+ml = [
+    "candle-core",
+    "candle-nn",
+    "candle-transformers",
+    "tokenizers",
+    "llama-cpp-2",
+]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
