@@ -53,7 +53,11 @@ fn ensure_encoder(app: &tauri::AppHandle, state: &AppState) -> Result<(), String
         .map_err(|e| format!("Cannot resolve app data dir: {e}"))?;
 
     drop(guard); // release lock before loading
+    log::info!("Checking embedding model (may download if not cached)...");
+    let _ = app.emit("rag:embedding-status", "Checking embedding model...");
     let model_dir = ml::download::ensure_embedding_model(&app_dir)?;
+    log::info!("Loading CandleEncoder from {:?}", model_dir);
+    let _ = app.emit("rag:embedding-status", "Loading model...");
     let encoder = CandleEncoder::new(&model_dir)?;
 
     log::info!("CandleEncoder auto-loaded from cache");

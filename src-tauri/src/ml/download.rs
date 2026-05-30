@@ -132,6 +132,9 @@ pub fn download_llm_model(
 /// from HuggingFace into the app's models directory. Uses a marker file to track
 /// completion so subsequent calls are instant.
 ///
+/// First checks the old hf-hub cache (`~/.cache/huggingface/hub/`) and copies files
+/// from there if available, avoiding re-download.
+///
 /// Returns the model directory path on success.
 pub fn ensure_embedding_model(app_dir: &Path) -> Result<PathBuf, String> {
     let model_dir = app_dir.join("models").join(EMBEDDING_REPO);
@@ -145,6 +148,46 @@ pub fn ensure_embedding_model(app_dir: &Path) -> Result<PathBuf, String> {
         return Ok(model_dir);
     }
 
+    // Check old hf-hub cache first — copy files instead of re-downloading
+    let home = std::env::var("HOME").unwrap_or_default();
+    let old_cache_dir = PathBuf::from(&home)
+        .join(".cache")
+        .join("huggingface")
+        .join("hub")
+        .join("models--sentence-transformers--all-MiniLM-L6-v2");
+
+    let old_snapshots = old_cache_dir.join("snapshots");
+    if old_snapshots.exists() {
+        if let Ok(entries) = std::fs::read_dir(&old_snapshots) {
+            for entry in entries.flatten() {
+                let snap = entry.path();
+                if !snap.is_dir() {
+                    continue;
+                }
+                let mut copied_any = false;
+                for filename in EMBEDDING_FILES {
+                    let src = snap.join(filename);
+                    if src.exists() {
+                        let dest = model_dir.join(filename);
+                        if !dest.exists() {
+                            log::info!("Copying {} from hf-hub cache", filename);
+                            std::fs::copy(&src, &dest)
+                                .map_err(|e| format!("Failed to copy cached {}: {e}", filename))?;
+                            copied_any = true;
+                        }
+                    }
+                }
+                if copied_any {
+                    std::fs::write(&marker, b"all-MiniLM-L6-v2")
+                        .map_err(|e| format!("Failed to write marker file: {e}"))?;
+                    log::info!("Embedding model copied from hf-hub cache at {:?}", snap);
+                    return Ok(model_dir);
+                }
+            }
+        }
+    }
+
+    // Download missing files from HuggingFace
     for filename in EMBEDDING_FILES {
         let dest = model_dir.join(filename);
         if dest.exists() {
@@ -157,7 +200,6 @@ pub fn ensure_embedding_model(app_dir: &Path) -> Result<PathBuf, String> {
         );
 
         log::info!("Downloading embedding model file: {}", filename);
-        // No progress callback for these small files
         download_file(&url, &dest, &mut |_, _| {})?;
     }
 
