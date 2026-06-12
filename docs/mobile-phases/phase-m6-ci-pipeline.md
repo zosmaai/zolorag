@@ -1,123 +1,240 @@
-# Phase 6.6 (M6): CI Pipeline & Distribution
+# Phase 6.6 (M6): CI/CD Pipeline — Desktop + Android
 
-> **Goal:** Automated Android builds in GitHub Actions that produce a signed APK/AAB, ready for sideloading or Play Store.
+> **Goal:** Automated builds in GitHub Actions that produce signed artifacts for both Android (APK/AAB) and desktop (macOS .dmg, Windows .exe, Linux AppImage). CI runs `cargo test` on desktop. Builds are repeatable and documented.
 > **Depends on:** M1 (toolchain), M2 (ML builds)
 
 ---
 
-## Scope
+## ⚠️ Cross-Platform Constraint
 
-Set up a repeatable CI pipeline for Android builds. This covers:
-- Cross-compilation of all Rust crates (including llama.cpp C++) in CI
-- APK packaging and signing
-- Artifact storage
-- Development workflow documentation
+CI must build and test **both** targets. Android-only CI leaves desktop regressions undetected.
 
-## Tasks
-
-### 1. GitHub Actions Runner Configuration
-- [ ] Base image: `ubuntu-latest` (22.04 or 24.04)
-- [ ] Install Android SDK via `action/setup-android@v4` or manual SDK manager
-- [ ] Install Android NDK r27+ (via SDK manager or pre-installed Ubuntu image)
-- [ ] Cache: `~/.gradle`, `~/.cargo`, `target/` for incremental builds
-- [ ] Set environment variables: `ANDROID_HOME`, `ANDROID_NDK_HOME`, `JAVA_HOME`
-
-### 2. Rust Build Step
-- [ ] `dtolnay/rust-toolchain@stable` with `targets: aarch64-linux-android`
-- [ ] `cargo install cargo-ndk` (cached if possible)
-- [ ] `cargo ndk -t arm64-v8a build --release` — this must succeed
-- [ ] If llama.cpp fails, document the exact NDK + env vars needed
-- [ ] **Llama.cpp compilation in CI**: set `CC_aarch64_linux_android`, `CXX_aarch64_linux_android`, `AR_aarch64_linux_android` to NDK toolchain paths
-
-### 3. Frontend Build
-- [ ] Node 22 + pnpm 10
-- [ ] `pnpm install`
-- [ ] `pnpm build` (Next.js static export)
-- [ ] Output goes to `src-tauri/` as usual
-
-### 4. Tauri Android Build
-- [ ] `pnpm tauri android build` — produces unsigned APK/AAB
-- [ ] Verify APK is produced at expected path
-- [ ] Set APK version name from `Cargo.toml` version + commit hash suffix
-
-### 5. APK Signing
-- [ ] Generate a debug keystore for CI (stored as GitHub secret, base64-encoded)
-- [ ] Sign APK with `apksigner` from Android SDK build-tools
-- [ ] Verify: `apksigner verify app-release.apk` passes
-- [ ] Store signed APK as a CI artifact (retention: 30 days)
-
-### 6. CI Matrix Strategy
-- [ ] **Build-only job**: `cargo ndk build --release` — runs on PRs (fast, < 10 min)
-- [ ] **Full APK job**: `pnpm tauri android build` — runs on push to `main` and tags
-- [ ] **Release job**: signed APK + GitHub Release upload — runs on tags only
-
-### 7. CI Performance & Caching
-- [ ] Target total build time: ≤ 20 minutes for full APK build
-- [ ] Cache cargo registry + git checkouts
-- [ ] Cache Gradle dependencies
-- [ ] Cache llama.cpp build artifacts (the `.a` file is large but rarely changes)
-- [ ] Consider using `sccache` for Rust compilation caching
-
-### 8. Build Documentation
-- [ ] Update `BUILD_ANDROID.md` with CI-specific notes
-- [ ] Document how to reproduce a CI build locally
-- [ ] Document the signing key management process
-- [ ] Document how to add a new Rust target or dependency
-
-### 9. Local Build Script
-- [ ] Create `scripts/build-android.sh` that wraps the full build process:
-  ```bash
-  #!/bin/bash
-  set -euo pipefail
-
-  export ANDROID_HOME=${ANDROID_HOME:-$HOME/Android/Sdk}
-  export ANDROID_NDK_HOME=${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/27.1.12297006}
-
-  cargo ndk -t arm64-v8a build --release
-  pnpm build
-  pnpm tauri android build
-  ```
-- [ ] Script checks all required env vars and exits with a clear error if missing
+| Job | Trigger | Runner | Artifacts |
+|-----|---------|--------|-----------|
+| `test` | Every PR + push | `ubuntu-latest` | Test results |
+| `build-desktop` | Push to `main` + tags | `macos-latest` | `.dmg`, `.app.tar.gz` |
+| `build-android` | Push to `main` + tags | `ubuntu-latest` | Signed `.apk` |
+| `release` | Tags only | Both | GitHub Release with all artifacts |
 
 ---
 
-## Feasibility Checklist (Blocker Detection)
+## Key Decisions from M2 (Do Not Revert)
 
-| # | Check | Status | Notes |
-|---|-------|--------|-------|
-| 1 | CI runner has Android SDK + NDK pre-installed or installable | ☐ | GitHub Actions Ubuntu 24.04 may not have NDK; needs `sdkmanager` step |
-| 2 | `cargo ndk build --release` succeeds in CI | ☐ | |
-| 3 | llama.cpp cross-compiles in CI environment | ☐ | Most likely failure point |
-| 4 | `pnpm tauri android build` succeeds in CI | ☐ | |
-| 5 | APK is signed in CI and verification passes | ☐ | |
-| 6 | CI cache reduces build time significantly across runs | ☐ | Measure: cold vs warm build |
-| 7 | Full CI run completes in ≤ 20 minutes | ☐ | |
-| 8 | Build script (`build-android.sh`) works locally | ☐ | |
-| 9 | CI produces a downloadable APK artifact | ☐ | |
-| 10 | PR build-check job runs in ≤ 10 minutes | ☐ | |
+- **No `cargo-ndk`** — Tauri calls plain `cargo build --target aarch64-linux-android`. The full NDK toolchain is declared in `src-tauri/.cargo/config.toml` `[env]` section. CI just needs the NDK installed at the correct path.
+- **No shell env var exports for CFLAGS/CXXFLAGS** — parentheses in `-Dposix_madvise(...)` break cmake on macOS. The `.cargo/config.toml` approach avoids this entirely.
+- **`scripts/setup-android.sh`** — run once in CI before Android build to patch `llama-cpp-sys-2` in `~/.cargo/registry`. It is idempotent.
+- **NDK version**: `29.0.14206865` — this is what `.cargo/config.toml` references. CI must install this exact version.
+
+---
+
+## Tasks
+
+### 1. CI Runner — Android (ubuntu-latest)
+
+- [ ] Base image: `ubuntu-latest` (24.04)
+- [ ] Install Java 17: `actions/setup-java@v4` with `distribution: temurin`
+- [ ] Install Android SDK + NDK via `android-actions/setup-android@v3`:
+  - SDK packages: `platform-tools`, `platforms;android-34`, `build-tools;34.0.0`
+  - NDK: `ndk;29.0.14206865` (exact version — matches `.cargo/config.toml`)
+- [ ] After NDK install, update `.cargo/config.toml` paths if CI NDK path differs from local:
+  - Local: `/opt/homebrew/share/android-commandlinetools/ndk/29.0.14206865` (macOS homebrew)
+  - CI: `$ANDROID_HOME/ndk/29.0.14206865`
+  - **Solution**: `.cargo/config.toml` should use `$ANDROID_NDK_ROOT` interpolation, OR the CI step sets the env vars to override the config values (`force = false` means env takes precedence)
+- [ ] Run `bash scripts/setup-android.sh` to patch `llama-cpp-sys-2` in registry
+- [ ] Cache:
+  - `~/.cargo/registry` (Cargo dependency downloads)
+  - `~/.cargo/git` (git-based deps)
+  - `src-tauri/target/aarch64-linux-android/release/build/` (llama.cpp compiled artifacts)
+  - `~/.gradle/caches` (Gradle)
+
+### 2. CI Runner — Desktop (macos-latest)
+
+- [ ] Base image: `macos-latest` (macOS 14, Apple Silicon)
+- [ ] Rust toolchain: `dtolnay/rust-toolchain@stable`
+- [ ] Node 22 + pnpm 10: `actions/setup-node@v4` + `pnpm/action-setup@v4`
+- [ ] Cache: `~/.cargo/registry`, `~/.cargo/git`, `src-tauri/target/release/`
+- [ ] No Android SDK, no NDK — desktop build must succeed without any Android env vars
+
+### 3. Test Job (ubuntu-latest — fast feedback on PRs)
+
+- [ ] Install Rust stable (no Android target needed — tests run on host)
+- [ ] `cargo test --lib --workspace` — all unit tests must pass
+- [ ] `cargo clippy --lib --workspace -- -D warnings` — no warnings
+- [ ] `pnpm install && pnpm build` — frontend builds without errors
+- [ ] Target time: ≤ 8 minutes
+
+### 4. Android Build Step
+
+- [ ] `pnpm install`
+- [ ] `pnpm build` (Next.js static export → `src-tauri/`)
+- [ ] `pnpm tauri android build --apk` — produces unsigned APK
+- [ ] APK path: `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`
+- [ ] Version name: read from `Cargo.toml` + short commit SHA suffix
+- [ ] **If `pnpm tauri android dev` is still broken (M2 deferred)**: use direct `cargo build --target aarch64-linux-android --lib --release` + Gradle APK assembly as a fallback
+
+### 5. Android APK Signing
+
+- [ ] Generate a CI keystore: `keytool -genkey -v -keystore ci-keystore.jks ...`
+- [ ] Store as GitHub secret: `ANDROID_KEYSTORE_BASE64` (base64-encoded `.jks`)
+- [ ] Store key password and alias as secrets: `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`
+- [ ] CI step: decode secret → write to temp file → sign with `apksigner`:
+  ```bash
+  echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/keystore.jks
+  apksigner sign --ks /tmp/keystore.jks --ks-key-alias "$ANDROID_KEY_ALIAS" \
+    --ks-pass "pass:$ANDROID_KEY_PASSWORD" \
+    --out app-release-signed.apk app-universal-release-unsigned.apk
+  ```
+- [ ] Verify: `apksigner verify app-release-signed.apk`
+- [ ] Upload as CI artifact (retention: 30 days)
+
+### 6. Desktop Build Step
+
+- [ ] `pnpm install`
+- [ ] `pnpm build` (Next.js static export)
+- [ ] `pnpm tauri build` — produces `.dmg` (macOS) / `.msi` + `.exe` (Windows) / `.AppImage` (Linux)
+- [ ] Upload as CI artifact (retention: 30 days)
+- [ ] **macOS code signing**: use `APPLE_CERTIFICATE` + `APPLE_CERTIFICATE_PASSWORD` secrets (or skip for internal builds — notarization can be deferred)
+
+### 7. CI Matrix Strategy
+
+```yaml
+# PRs: fast tests only
+on:
+  pull_request:
+    jobs: [test]
+
+# Push to main: full builds
+on:
+  push:
+    branches: [main]
+    jobs: [test, build-desktop, build-android]
+
+# Tags: release artifacts
+on:
+  push:
+    tags: ['v*']
+    jobs: [test, build-desktop, build-android, release]
+```
+
+### 8. .cargo/config.toml — CI Path Override
+
+The local `.cargo/config.toml` hardcodes the macOS homebrew NDK path. CI has a different path. Two options:
+
+**Option A (recommended)**: Add a CI-specific env override step before the build:
+```yaml
+- name: Override NDK paths for CI
+  run: |
+    NDK=$ANDROID_HOME/ndk/29.0.14206865
+    TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin
+    echo "ANDROID_NDK=$NDK"           >> $GITHUB_ENV
+    echo "NDK_ROOT=$NDK"              >> $GITHUB_ENV
+    echo "ANDROID_NDK_ROOT=$NDK"      >> $GITHUB_ENV
+    echo "CC_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android24-clang"   >> $GITHUB_ENV
+    echo "CXX_aarch64_linux_android=$TOOLCHAIN/aarch64-linux-android24-clang++" >> $GITHUB_ENV
+    echo "AR_aarch64_linux_android=$TOOLCHAIN/llvm-ar"                          >> $GITHUB_ENV
+    echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$TOOLCHAIN/aarch64-linux-android24-clang" >> $GITHUB_ENV
+```
+Since `.cargo/config.toml` uses `force = false`, shell env takes precedence over config values.
+
+**Option B**: Parameterise `.cargo/config.toml` with relative paths (fragile — not recommended).
+
+### 9. CI Performance & Caching
+
+- [ ] Target: ≤ 10 min test job, ≤ 25 min Android build, ≤ 20 min desktop build
+- [ ] Cache key includes: Rust toolchain version, `Cargo.lock` hash, NDK version
+- [ ] Cache llama.cpp compiled `.a` file — it changes only when `llama-cpp-sys-2` version bumps
+- [ ] `sccache` for Rust compilation across runs (optional but effective)
+- [ ] Gradle: `ORG_GRADLE_PROJECT_org.gradle.workers.max=2` to prevent OOM on CI
+
+### 10. Local Build Scripts
+
+- [ ] `scripts/setup-android.sh` — patch `llama-cpp-sys-2` in registry (already exists, run before Android builds)
+- [ ] `scripts/build-android.sh` — full Android build (update to remove `cargo-ndk`, use plain `cargo build`):
+  ```bash
+  #!/bin/bash
+  set -euo pipefail
+  bash scripts/setup-android.sh
+  pnpm install
+  pnpm build
+  pnpm tauri android build --apk
+  ```
+- [ ] `scripts/build-desktop.sh` — full desktop build:
+  ```bash
+  #!/bin/bash
+  set -euo pipefail
+  pnpm install
+  pnpm build
+  pnpm tauri build
+  ```
+- [ ] Both scripts check for required tools and print clear errors if missing
+
+### 11. Build Documentation
+
+- [ ] Update `BUILD_ANDROID.md`:
+  - Reference `.cargo/config.toml` as the toolchain config (no manual env vars)
+  - Reference `scripts/setup-android.sh` (run once per clone or `cargo update`)
+  - NDK version: `29.0.14206865`
+  - Known issue: `pnpm tauri android dev` emulator detection (see M2 deferred items)
+- [ ] Update `BUILD_DESKTOP.md` (or main README):
+  - Standard Tauri desktop build instructions
+  - No Android env vars needed for desktop builds
+
+---
+
+## Feasibility Checklist
+
+| # | Check | Platform | Status |
+|---|-------|----------|--------|
+| 1 | `cargo test --lib` passes in CI | Desktop | ☐ |
+| 2 | NDK 29.0.14206865 installable via `sdkmanager` in CI | Android | ☐ |
+| 3 | CI env var override takes precedence over `.cargo/config.toml` | Android | ☐ |
+| 4 | `scripts/setup-android.sh` runs successfully in CI | Android | ☐ |
+| 5 | `cargo build --target aarch64-linux-android --lib --release` in CI | Android | ☐ |
+| 6 | `pnpm tauri android build` succeeds in CI | Android | ☐ |
+| 7 | APK signing passes `apksigner verify` | Android | ☐ |
+| 8 | `pnpm tauri build` succeeds on macOS CI | Desktop | ☐ |
+| 9 | Desktop artifact (.dmg) downloadable from CI | Desktop | ☐ |
+| 10 | Android artifact (.apk) downloadable from CI | Android | ☐ |
+| 11 | CI cache measurably reduces build time on second run | Both | ☐ |
+| 12 | Total Android CI run ≤ 25 min (warm cache) | Android | ☐ |
+| 13 | Total desktop CI run ≤ 20 min (warm cache) | Desktop | ☐ |
+
+---
 
 ## Blockers & Risks
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Android SDK/NDK installation is slow or fails in CI | **High** | Use pre-baked Docker image with NDK; or cache SDK install |
-| llama.cpp build fails due to missing NDK CMake toolchain detection | **High** | Explicitly set `CMAKE_TOOLCHAIN_FILE` and `ANDROID_ABI` in CI env |
-| Gradle build consumes too much memory in CI (OOM) | Medium | Limit Gradle parallel workers: `ORG_GRADLE_PROJECT_org.gradle.workers.max=2` |
-| Tauri CLI version mismatch with local dev | Low | Pin Tauri CLI version in CI and local dev |
-| GitHub Actions cache size limit (10 GB) | Low | Monitor cache size; prune old entries |
+| Risk | Impact | Platform | Mitigation |
+|------|--------|----------|------------|
+| NDK 29.0.14206865 not available via `sdkmanager` in CI | **High** | Android | Pin to available version; update `.cargo/config.toml` if version changes |
+| `scripts/setup-android.sh` fails if registry path changes after `cargo update` | Medium | Android | Script already handles this (searches by glob); re-test in CI |
+| macOS CI runner is Apple Silicon but keystore signed on Intel | Low | Desktop | Use universal binary or pin to `macos-latest` |
+| GitHub Actions cache evicted (10 GB limit) | Low | Both | Monitor cache size; evict Android target cache first |
+| `pnpm tauri android dev` emulator detection (from M2) | Medium | Android | Use `tauri android build` (not `dev`) in CI — this is unaffected |
+
+---
 
 ## Success Criteria
 
-- [ ] CI produces a signed, installable APK on every push to main
-- [ ] CI run completes in ≤ 20 minutes (full) or ≤ 10 minutes (PR check)
-- [ ] CI artifacts are downloadable and installable on a physical device
-- [ ] A new developer can set up the Android build in ≤ 1 hour by following `BUILD_ANDROID.md`
+### Both Platforms
+- [ ] CI produces downloadable artifacts on every push to `main`
+- [ ] `cargo test` passes on every PR
+- [ ] A new developer can reproduce the CI build locally using the documented scripts
+
+### Android
+- [ ] Signed APK installable on a physical device from CI artifact
+- [ ] Android CI run ≤ 25 minutes (warm cache)
+
+### Desktop
+- [ ] `.dmg` (macOS) installable from CI artifact
+- [ ] Desktop CI run ≤ 20 minutes (warm cache)
+
+---
 
 ## Exit Criteria
 
 M6 is **complete** when:
-1. GitHub Actions workflow runs successfully end-to-end
-2. Signed APK is produced and verified
-3. APK can be sideloaded onto a device directly from CI artifacts
-4. Build documentation is complete and tested by at least one other developer
-5. Team can produce a release APK with one command or CI trigger
+1. All three CI jobs (test, build-android, build-desktop) pass on `main`
+2. Both artifacts (APK + .dmg) are downloadable and installable from a tag release
+3. Android APK `apksigner verify` passes
+4. `BUILD_ANDROID.md` updated — verified by a second developer completing setup from scratch
+5. Team can produce a full release (both platforms) from a single git tag

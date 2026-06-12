@@ -1,159 +1,218 @@
-# Phase 6.7 (M7): Beta Testing & Performance Tuning
+# Phase 6.7 (M7): Beta Testing & Performance Tuning — Desktop + Mobile
 
-> **Goal:** Ship a stable beta APK, gather real-world feedback, and optimize performance for the 80% use case.
+> **Goal:** Ship a stable beta for both desktop and Android. Gather real-world feedback. Fix critical bugs. Document performance baselines for both platforms.
 > **Depends on:** M1–M6 (all previous phases integrated)
+
+---
+
+## ⚠️ Cross-Platform Constraint
+
+Beta is not Android-only. Both platforms must be tested and must have releasable artifacts.
+
+| Concern | Desktop | Android |
+|---------|---------|---------|
+| Integration test matrix | ✅ Full pass required | ✅ Full pass required |
+| Performance benchmarks | ✅ Baseline docs | ✅ tok/s target ≥3 |
+| Beta distribution | `.dmg` / `.exe` / `.AppImage` | `.apk` sideload |
+| P0 bug bar | Same — app must not crash | Same |
+| Release artifact | ✅ GitHub Release | ✅ GitHub Release |
 
 ---
 
 ## Scope
 
-This is the stabilization phase. Everything should be working end-to-end. Now we:
-1. Fix the inevitable bugs found on real devices
-2. Performance-tune the critical paths
-3. Gather beta tester feedback
-4. Decide on release readiness
-
-## Tasks
-
-### 1. End-to-End Integration Test (Manual)
-Run the full flow on a physical device and document results:
-
-| Test Case | Expected | Actual |
-|-----------|----------|--------|
-| Fresh install → wizard → download model | ≤ 1 tap per step, clear progress | ☐ |
-| Open PDF from Downloads folder | Parses correctly in ≤ 5 seconds | ☐ |
-| Open PDF from Google Drive (content URI) | Copies, parses correctly | ☐ |
-| Share PDF from WhatsApp → ZoloRAG | App opens, auto-loads PDF | ☐ |
-| Ask a question about loaded PDF | Generates answer with source citations | ☐ |
-| Ask a follow-up question | Context is maintained | ☐ |
-| Ask about something NOT in the PDF | Model says "not found in document" | ☐ |
-| Switch apps mid-generation, come back | Generation still continues | ☐ |
-| Kill app, reopen, load same PDF | App recovers gracefully | ☐ |
-| Try to open a password-protected PDF | Shows error message | ☐ |
-| Try to open a corrupt PDF | Shows error message | ☐ |
-| Run on low-storage device (<2 GB free) | Shows storage warning | ☐ |
-| Run on 6 GB RAM device (Pixel 7) | No OOM, smooth operation | ☐ |
-| Run on 4 GB RAM device (Galaxy A14) | Graceful degradation or clear "unsupported" msg | ☐ |
-| Rotate device during chat | Layout adapts, no crash | ☐ |
-| Dark mode on device | All text readable | ☐ |
-| Download over mobile data | Shows warning dialog | ☐ |
-
-### 2. Performance Benchmarking
-
-#### LLM Inference Speed
-- [ ] Measure generation speed (tok/s) on 3+ physical devices across tiers:
-  - Pixel 7 (Tensor G2, 8 GB)
-  - Galaxy S24 (Snapdragon 8 Gen 3, 8 GB)
-  - Galaxy A54 (Exynos 1380, 6 GB)
-  - Pixel Tablet (Tensor G2, 8 GB)
-- [ ] Test with Qwen2.5-0.5B, Qwen2.5-1.5B, Llama 3.2-3B
-- [ ] Test at different context lengths: 512, 1024, 2048 tokens
-- [ ] Report mean and P95 tok/s for each combination
-
-#### PDF Parsing
-- [ ] Measure time to parse + chunk for: 10 pg, 50 pg, 300 pg PDFs
-- [ ] Compare against desktop for parity
-
-#### App Launch Time
-- [ ] Cold start → WebView visible
-- [ ] Cold start → model loaded and ready (if model already downloaded)
-- [ ] Warm start (app in background) → ready
-
-#### Memory Usage
-- [ ] Peak RSS with no model loaded
-- [ ] Peak RSS with model loaded, idle
-- [ ] Peak RSS during generation
-- [ ] Peak RSS with large PDF + long chat history (100+ messages)
-
-### 3. Known Issues & Bug Fixes
-- [ ] Create a shared bug tracker (GitHub Issues)
-- [ ] Tag bugs by area: UI, ML, File handling, Build
-- [ ] Prioritize:
-  - **P0**: App crashes, ANR, data loss, can't open PDF
-  - **P1**: Generation broken, incorrect answers, major UI breakage
-  - **P2**: Performance issues, minor UI glitches
-  - **P3**: Polish, animations, edge cases
-
-### 4. Battery & Thermal Testing
-- [ ] Measure battery drain: 10 minutes of continuous chat
-- [ ] Note device temperature after 10 min chat (warm? hot? throttling?)
-- [ ] Compare against baseline (phone idle battery draw)
-- [ ] Document findings for release notes
-
-### 5. Beta Distribution Setup
-- [ ] Set up a TestFlight-like distribution:
-  - Option A: GitHub Releases with APK download (simplest)
-  - Option B: Firebase App Distribution
-  - Option C: Google Play Internal Testing Track (requires Play Console account)
-- [ ] Create a `#beta` channel or group for feedback collection
-- [ ] Write a beta tester onboarding doc:
-  - How to install (enable "Install from unknown sources")
-  - How to report bugs (screenshots + device info)
-  - Known limitations
-  - What's being tested
-
-### 6. Performance Optimization (As Needed)
-Based on benchmark data, decide which optimizations to pursue:
-
-| Optimization | Impact | Decision |
-|-------------|--------|----------|
-| Vulkan GPU offload for LLM | 2-3x tok/s on flagship | ⏸ Post-MVP |
-| Smaller default model (0.5B) | Faster, less accurate | ☐ Decide |
-| Model quantization (Q3_K_M) | 25% smaller, minimal quality loss | ☐ Try |
-| PDF text extraction caching | Faster re-parse of same PDF | ☐ If needed |
-| Trim old chat history to save RAM | Memory savings | ☐ If needed |
-| Lazy model loading (deferred init) | Faster app startup | ☐ If needed |
-
-### 7. Release Readiness Decision
-After beta feedback, decide:
-
-- **Go**: Ship as v1.0.0-android — stable, usable, meets success criteria
-- **Iterate**: Fix critical bugs found in beta, then re-evaluate
-- **Hold**: Feasibility blocker found (e.g., memory issues on 6 GB devices)
+End-to-end stabilization across both platforms. Fix inevitable bugs, document performance baselines, gather beta feedback, decide on release readiness.
 
 ---
 
-## Feasibility Checklist (Blocker Detection)
+## Tasks
 
-| # | Check | Status | Notes |
-|---|-------|--------|-------|
-| 1 | End-to-end flow works on Pixel 7 (8 GB reference device) | ☐ | |
-| 2 | End-to-end flow works on Galaxy A54 (6 GB budget device) | ☐ | If fails, adjust min specs |
-| 3 | Generation speed ≥3 tok/s on reference device (Qwen2.5-1.5B) | ☐ | |
-| 4 | App doesn't crash after 30 minutes of usage | ☐ | |
-| 5 | No ANR during any operation | ☐ | |
-| 6 | Battery drain ≤ 15% per 10 min of continuous chat | ☐ | |
-| 7 | Device doesn't overheat (no throttling) during normal use | ☐ | |
-| 8 | PDFs of 300+ pages are parsed without timeout | ☐ | |
-| 9 | Sharing PDFs from 3 different apps (Files, Google Drive, WhatsApp) works | ☐ | |
-| 10 | Beta testers can install and report bugs without confusion | ☐ | |
+### 1. End-to-End Integration Test Matrix
+
+Run on: macOS desktop + Pixel 7 (8 GB) minimum. Document results per platform.
+
+| Test Case | Desktop | Android |
+|-----------|---------|---------|
+| Fresh install → wizard → download model | ☐ | ☐ |
+| Open PDF from file system | ☐ | ☐ (file picker) |
+| Open PDF from Google Drive / cloud | ☐ N/A (native path) | ☐ (content URI) |
+| Share PDF from another app → ZoloRAG | ☐ N/A | ☐ (intent) |
+| Ask a question about loaded PDF | ☐ | ☐ |
+| Ask a follow-up (context maintained) | ☐ | ☐ |
+| Ask about something NOT in PDF | ☐ | ☐ |
+| Switch apps mid-generation, come back | ☐ N/A | ☐ |
+| Kill app, reopen, load same PDF | ☐ | ☐ |
+| Password-protected PDF → error | ☐ | ☐ |
+| Corrupt PDF → error | ☐ | ☐ |
+| Low storage warning (<2 GB free) | ☐ | ☐ |
+| DropZone drag-and-drop works | ☐ | N/A |
+| Dark mode — all text readable | ☐ | ☐ |
+| Large PDF (300+ pages) — no timeout | ☐ | ☐ |
+| Window resize / device rotation | ☐ | ☐ |
+| Download over mobile data → warning | N/A | ☐ |
+| Run on low-RAM device (6 GB) | N/A | ☐ |
+
+### 2. Performance Benchmarking
+
+#### LLM Inference Speed — Android Devices
+Measure tok/s on physical devices. Target: ≥3 tok/s on reference device (Pixel 7).
+
+| Device | RAM | Qwen2.5-0.5B | Qwen2.5-1.5B | Llama 3.2-3B |
+|--------|-----|-------------|-------------|-------------|
+| Pixel 7 (Tensor G2) | 8 GB | ☐ | ☐ | ☐ |
+| Galaxy S24 (SD 8 Gen 3) | 8 GB | ☐ | ☐ | ☐ |
+| Galaxy A54 (Exynos 1380) | 6 GB | ☐ | ☐ | ☐ |
+
+#### LLM Inference Speed — Desktop
+Document baseline (not a gating criterion, but tracked).
+
+| Machine | RAM | Qwen2.5-1.5B | Llama 3.2-3B |
+|---------|-----|-------------|-------------|
+| MacBook Pro M-series | 16+ GB | ☐ | ☐ |
+| MacBook Air M-series | 8 GB | ☐ | ☐ |
+| Windows (Intel/AMD) | 16 GB | ☐ | ☐ |
+
+#### PDF Parsing Speed (Both Platforms)
+| PDF Size | Desktop | Android |
+|----------|---------|---------|
+| 10 pages | ☐ | ☐ |
+| 50 pages | ☐ | ☐ |
+| 300 pages | ☐ | ☐ |
+
+#### App Launch Time
+| Scenario | Desktop | Android |
+|----------|---------|---------|
+| Cold start → WebView visible | ☐ | ☐ |
+| Cold start → model ready (already downloaded) | ☐ | ☐ |
+| Warm start (app in background) | N/A | ☐ |
+
+#### Memory Usage (Both Platforms)
+| State | Desktop | Android |
+|-------|---------|---------|
+| App idle, no model | ☐ | ☐ |
+| Model loaded, idle | ☐ | ☐ |
+| During generation | ☐ | ☐ |
+| Large PDF + 100 messages | ☐ | ☐ |
+
+### 3. Bug Tracking
+
+- [ ] Create GitHub Issues with labels: `platform:desktop`, `platform:android`, `area:ml`, `area:ui`, `area:files`, `area:build`
+- [ ] Priority ladder:
+  - **P0**: Crash, ANR, data loss, can't open any PDF, generation broken
+  - **P1**: Wrong answers, major UI breakage, install fails
+  - **P2**: Performance issues, minor UI glitches, intermittent failures
+  - **P3**: Polish, animations, edge cases
+- [ ] Ship criteria: zero open P0s, zero open P1s on both platforms
+
+### 4. Battery & Thermal Testing (Android)
+
+- [ ] Measure battery drain: 10 minutes of continuous chat on Pixel 7
+- [ ] Device temperature after 10 min (warm / hot / throttling?)
+- [ ] Compare against idle baseline
+- [ ] Document findings — include in release notes if notable
+- [ ] **Desktop**: no battery test (plugged in during typical use)
+
+### 5. Beta Distribution
+
+#### Android
+- [ ] **Primary**: GitHub Releases — APK download, sideload
+  - Instructions: "Settings → Security → Install unknown apps"
+- [ ] **Optional**: Firebase App Distribution (if group is >10 testers)
+- [ ] **Deferred**: Google Play Internal Testing Track (requires Play Console account)
+
+#### Desktop
+- [ ] **Primary**: GitHub Releases — `.dmg` (macOS), `.exe` installer (Windows), `.AppImage` (Linux)
+- [ ] No code signing required for internal beta (Gatekeeper warning acceptable with right-click → Open)
+- [ ] Notarization deferred to public release
+
+#### Both
+- [ ] Create a beta tester onboarding doc:
+  - Install instructions per platform
+  - How to report bugs (screenshots + platform + device/OS info)
+  - Known limitations and what's being tested
+- [ ] Set up a `#beta` channel for feedback
+
+### 6. Performance Optimizations (As Needed)
+
+After benchmark data, decide per optimization:
+
+| Optimization | Impact | Platform | Decision |
+|-------------|--------|----------|---------|
+| Vulkan GPU offload for LLM | 2–3× tok/s | Android flagship | ⏸ Post-MVP |
+| CoreML / Metal acceleration | 5–10× tok/s | macOS Apple Silicon | ⏸ Post-MVP |
+| Smaller default model (0.5B) | Faster, less accurate | Both | ☐ Decide after benchmarks |
+| Q3_K_M quantization | 25% smaller, minimal quality loss | Both | ☐ Try |
+| PDF text extraction caching | Faster re-parse | Both | ☐ If needed |
+| Trim old chat history | RAM savings | Both | ☐ If needed |
+| Lazy model loading | Faster startup | Both | ☐ If needed |
+
+### 7. Release Readiness Decision
+
+After beta, decide:
+- **Go**: Ship v1.0.0 — stable on both platforms, meets all success criteria
+- **Iterate**: Fix critical bugs found in beta, re-evaluate in 1 week
+- **Hold**: Feasibility blocker found (e.g., memory crash on 6 GB Android devices)
+
+---
+
+## Feasibility Checklist
+
+| # | Check | Platform | Status |
+|---|-------|----------|--------|
+| 1 | Full integration test matrix passes on macOS | Desktop | ☐ |
+| 2 | Full integration test matrix passes on Pixel 7 | Android | ☐ |
+| 3 | Generation speed ≥3 tok/s on Pixel 7 (Qwen2.5-1.5B) | Android | ☐ |
+| 4 | No crash after 30 minutes of usage | Both | ☐ |
+| 5 | No ANR during any operation | Android | ☐ |
+| 6 | Battery drain ≤15% per 10 min of continuous chat | Android | ☐ |
+| 7 | No thermal throttling during normal use | Android | ☐ |
+| 8 | PDFs of 300+ pages parsed without timeout | Both | ☐ |
+| 9 | Share from 3 apps (Files, Google Drive, WhatsApp) | Android | ☐ |
+| 10 | DropZone drag-and-drop works after all M4 changes | Desktop | ☐ |
+| 11 | Beta testers can install without help | Both | ☐ |
+
+---
 
 ## Blockers & Risks
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Memory crash on 6 GB devices during LLM inference | **High** | Default to 0.5B model for 6 GB; detect RAM and recommend model |
-| Thermal throttling after 5 minutes of chat | Medium | Show "device warming" indicator; auto-pause after N minutes |
-| PDF parsing fails on obscure PDFs | Medium | Catch errors, show "unsupported PDF format" with fallback to lopdf |
-| Beta testers don't report bugs | Low | Keep group small (5-10) and engaged; offer incentive |
-| Google Play doesn't approve (if submitting) | Medium | Start with sideload APK; defer Play Store |
+| Risk | Impact | Platform | Mitigation |
+|------|--------|----------|------------|
+| Memory crash on 6 GB Android devices | **High** | Android | Default to 0.5B for ≤6 GB; detect RAM and gate model selection |
+| Thermal throttling after 5 min chat | Medium | Android | Show "device warming" indicator; auto-pause after N minutes |
+| PDF parsing fails on obscure PDFs | Medium | Both | Catch errors; fallback to `lopdf`; show "unsupported format" |
+| Desktop regression discovered late (M4/M5 changes) | **High** | Desktop | Integration test matrix on desktop is mandatory, not optional |
+| Beta testers don't report bugs | Low | Both | Keep group small (5–10 per platform); structured feedback form |
+
+---
 
 ## Success Criteria
 
-- [ ] App runs stably on Pixel 7 (8 GB) and Galaxy A54 (6 GB)
+### Desktop
+- [ ] Full integration test matrix passes
+- [ ] DropZone and file dialog both work
+- [ ] No P0/P1 bugs
+- [ ] `.dmg` / `.exe` installable by a non-developer
+
+### Android
+- [ ] Full integration test matrix passes on Pixel 7 + one budget device (6 GB)
 - [ ] Generation speed ≥3 tok/s on reference device
-- [ ] No P0 or P1 bugs outstanding
-- [ ] Battery drain acceptable (≤ 15% per 10 min chat)
-- [ ] At least 5 beta testers have installed and used the app for 1+ hour
-- [ ] Performance benchmarks documented and acceptable to the team
+- [ ] No P0/P1 bugs
+- [ ] Battery drain acceptable (≤15% per 10 min)
+- [ ] At least 5 beta testers used the app for 1+ hour
+
+### Both
+- [ ] Performance benchmarks documented
+- [ ] Beta feedback reviewed — critical issues resolved
+
+---
 
 ## Exit Criteria
 
-M7 is **complete** and Phase 6 is **done** when:
-1. All test cases in the integration test matrix pass on at least 2 physical devices
-2. Performance benchmarks meet minimum thresholds
-3. No known P0/P1 bugs
-4. Beta feedback has been reviewed and critical issues resolved
-5. A signed release APK is published (as a GitHub Release)
-6. `README.md` is updated with Android build/install instructions
-7. The team declares the MVP ready
+Phase 6 (all of M1–M7) is **done** when:
+1. Integration test matrix passes on macOS desktop **and** Pixel 7
+2. Performance benchmarks meet minimums on both platforms
+3. Zero P0/P1 bugs on both platforms
+4. Beta feedback reviewed and critical issues resolved
+5. GitHub Release published with: signed APK, macOS .dmg, Windows .exe
+6. `README.md` updated with install instructions for all platforms
+7. Team declares MVP ready on both platforms

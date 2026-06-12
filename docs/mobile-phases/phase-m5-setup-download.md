@@ -1,113 +1,167 @@
-# Phase 6.5 (M5): Setup Wizard & Model Download for Mobile
+# Phase 6.5 (M5): Setup Wizard & Model Download — Cross-Platform
 
-> **Goal:** First-run experience guides the user through model download with mobile-specific considerations (Wi-Fi check, storage check, pause/resume).
-> **Depends on:** M2 (ML works on device), M4 (UI has mobile layout)
+> **Goal:** First-run experience and model download work reliably on both desktop and Android. Android gets mobile-specific additions (Wi-Fi check, wake lock, background resilience). Desktop is not regressed.
+> **Depends on:** M2 (ML works on device), M4 (UI responsive layout)
+
+---
+
+## ⚠️ Cross-Platform Constraint
+
+The existing model download manager already works on desktop. This phase:
+
+| Concern | Desktop | Android |
+|---------|---------|---------|
+| First-run wizard | ✅ Keep existing — add nothing, break nothing | Responsive adaptation from M4 + mobile-specific steps |
+| Storage check | ✅ Already works via `std::fs` | Same + Android `StatFs` fallback if `std::fs` free-space is unavailable |
+| Download progress | ✅ Already works | Same `reqwest` + Range resume — no changes |
+| Wi-Fi detection | ❌ N/A (always on a network) | 🤖 Android-only — `ConnectivityManager` via JNI |
+| Wake lock | ❌ N/A (desktop doesn't sleep mid-download) | 🤖 Android-only — foreground service or partial wake lock |
+| Background resilience | ✅ App stays alive on desktop | 🤖 Android-only — handle process kill + resume |
+| RAM detection | ✅ Already works (`sys-info` crate) | Same — `sys-info` works on Android too |
+
+**Android-specific code is always gated behind `#[cfg(target_os = "android")]`.**
 
 ---
 
 ## Scope
 
-Adapt the existing model download manager to work well on mobile:
-- Storage space checks before download
-- Wi-Fi-only download with override option
-- Progress tracking with estimated time
-- Graceful handling of app going to background during download
-- First-run wizard flow tailored to mobile form factor
-
-## Tasks
-
-### 1. Storage Space Checks
-- [ ] Before download, check available free space in app data directory
-- [ ] Compare against model size + 10% overhead (for temporary files)
-- [ ] Show warning if insufficient space (with "Free up space" guidance)
-- [ ] Check is done in Rust via `std::fs::metadata` + `fs2` crate (or similar free-space API)
-- [ ] If Tauri's `path` API doesn't expose free space, use Android-specific `StatFs` via JNI
-
-### 2. Network Checks & Wi-Fi Awareness
-- [ ] Before starting download, check if on Wi-Fi
-- [ ] If on mobile data → show dialog: "Downloading [size] over mobile data may use your data plan. Continue?"
-- [ ] Provide "Download over Wi-Fi only" toggle in settings (persisted)
-- [ ] If on Wi-Fi-only mode and not on Wi-Fi → show "Connect to Wi-Fi to download" message
-- [ ] Implementation: use `ConnectivityManager` on Android via Tauri plugin or JNI bridge
-
-### 3. Download Progress (Mobile-Optimized)
-- [ ] Reuse existing `reqwest` + Range-request downloader (pause/resume works)
-- [ ] Progress events are already emitted via Tauri events — frontend already handles this
-- [ ] Add estimated time remaining calculation (bytes/sec smoothed over last 10 samples)
-- [ ] Show download speed (MB/s) for user feedback
-- [ ] Test pause/resume: kill app, reopen, verify download resumes from last byte
-
-### 4. Background Download Resilience
-- [ ] If user switches away from app during download, download continues (file write continues)
-- [ ] If Android kills the app process, partial download is recoverable (Range header)
-- [ ] Acquire a partial wake lock during download to prevent device sleep
-- [ ] Consider using Android `DownloadManager` for very large models (alternative path)
-
-### 5. First-Run Wizard (Mobile Version)
-- [ ] Modify SetupPanel (from M4) to show model selection flow:
-  - Step 1: "Welcome to ZoloRAG" — brief value prop, "Get Started" button
-  - Step 2: Model selection — show 2–3 model options with size/RAM requirements:
-    - "Fast" (Qwen2.5-0.5B, ~400 MB, runs on 4 GB devices)
-    - "Balanced" (Qwen2.5-1.5B, ~1 GB, recommended for 8 GB devices)
-    - "Powerful" (Llama 3.2-3B, ~1.8 GB, flagship 12+ GB devices only)
-  - Step 3: Download confirmation — show size, Wi-Fi status, storage check
-  - Step 4: Download progress — animated progress bar with ETA
-  - Step 5: "Ready!" — model loaded, "Open a PDF to start" with OpenPdfButton
-- [ ] Model selection should show RAM estimate vs device RAM (detect via Tauri API)
-- [ ] After Step 5, skip wizard on subsequent launches
-
-### 6. Model Switching
-- [ ] Allow user to download a different model later (from settings page)
-- [ ] Show storage saved by keeping only one model (no auto-delete, manual switch)
-- [ ] When switching models, unload current before loading new one (memory management)
-
-### 7. Error Handling for Downloads
-- [ ] Network timeout → show retry button with exponential backoff suggestion
-- [ ] Storage full mid-download → pause, show message, resume after space freed
-- [ ] Corrupted download → offer to re-download (verify with checksum if available)
-- [ ] Server error (HTTP 4xx/5xx) → show clear error, not a generic failure
+Extend the download manager for mobile-specific edge cases, add Android-native network/storage checks, and ensure the first-run wizard works on both form factors.
 
 ---
 
-## Feasibility Checklist (Blocker Detection)
+## Tasks
 
-| # | Check | Status | Notes |
-|---|-------|--------|-------|
-| 1 | Free storage check works before download starts | ☐ | May need JNI for `StatFs` |
-| 2 | Wi-Fi status detection works on Android | ☐ | May need Tauri plugin or JNI |
-| 3 | Wi-Fi-only toggle is persisted and respected | ☐ | |
-| 4 | Download progress with ETA shows correctly in mobile UI | ☐ | |
-| 5 | App going to background → download continues | ☐ | Wake lock or foreground service |
-| 6 | App killed → resume download from byte N works | ☐ | |
-| 7 | First-run wizard is intuitive on a 6.3" screen | ☐ | |
-| 8 | Model selection correctly shows RAM estimate vs device RAM | ☐ | Need device RAM detection API |
-| 9 | Switching models unloads old model before loading new | ☐ | |
-| 10 | All download errors show user-friendly messages | ☐ | |
+### 1. Storage Space Check (Cross-Platform with Android Fallback)
+- [ ] Before download, check available free space in the app data directory
+- [ ] Primary: `fs2` crate's `available_space()` — works on desktop (macOS/Windows/Linux)
+- [ ] Android fallback: if `fs2` reports 0 or fails, use Android `StatFs` via JNI
+- [ ] Compare available space against: `model_size_bytes * 1.1` (10% overhead)
+- [ ] Show warning if insufficient space with "how to free up space" guidance
+- [ ] **Desktop regression**: existing storage check (if any) must still work
+
+### 2. Network Checks & Wi-Fi Awareness (Android-only)
+- [ ] `#[cfg(target_os = "android")]` gate on all network-check code
+- [ ] Before download, detect if on Wi-Fi via `ConnectivityManager`
+  - Implement as a minimal Tauri plugin or JNI bridge
+- [ ] On mobile data → dialog: "Downloading [X GB] over mobile data — continue?"
+- [ ] "Wi-Fi only" toggle in settings (persisted to disk)
+- [ ] On Wi-Fi-only mode + not on Wi-Fi → "Connect to Wi-Fi to download" block
+- [ ] **Desktop**: no network check UI — downloads always proceed
+
+### 3. Download Progress — Shared (No Desktop Changes)
+- [ ] Reuse existing `reqwest` + Range-request pause/resume downloader — unchanged
+- [ ] Progress events already emitted via Tauri events — frontend already handles them
+- [ ] Add estimated time remaining: bytes/sec smoothed over last 10 samples (both platforms)
+- [ ] Show download speed (MB/s) for feedback (both platforms)
+- [ ] Test pause/resume: kill app, reopen, verify download resumes from last byte
+  - Desktop: kill process, reopen — verify resume
+  - Android: kill via recents, reopen — verify resume
+
+### 4. Background Download Resilience (Android-only)
+- [ ] `#[cfg(target_os = "android")]` gate
+- [ ] If user switches away from app during download, download continues
+  - Use Android foreground service with a persistent notification: "Downloading model... X%"
+- [ ] Acquire partial wake lock to prevent device sleep during download
+- [ ] If Android kills the app process mid-download, partial file survives → Range resume on next open
+- [ ] Consider `Android DownloadManager` as an alternative for very large models (>2 GB)
+- [ ] **Desktop**: no changes — desktop process lifecycle handles this natively
+
+### 5. First-Run Wizard — Responsive, Not Replaced
+- [ ] **Desktop**: existing wizard/SetupPanel keeps its current layout and flow — no changes
+- [ ] **Mobile** (additive, uses M4's responsive SetupPanel):
+  - Step 1: "Welcome to ZoloRAG" — brief value prop, "Get Started"
+  - Step 2: Model selection — 3 options with size + RAM requirements:
+    - "Fast" (Qwen2.5-0.5B, ~400 MB, 4 GB devices)
+    - "Balanced" (Qwen2.5-1.5B, ~1 GB, 8 GB devices — recommended)
+    - "Powerful" (Llama 3.2-3B, ~1.8 GB, 12 GB+ devices)
+  - Step 3: Download confirmation — size, Wi-Fi status (Android) / storage check (both)
+  - Step 4: Download progress — animated bar with ETA
+  - Step 5: "Ready!" — model loaded, OpenPdfButton
+- [ ] Shared state machine between desktop and mobile — only presentation differs
+- [ ] After Step 5, skip wizard on subsequent launches (both platforms)
+- [ ] **Desktop regression**: existing "model already downloaded" detection must still skip wizard
+
+### 6. Device RAM Detection & Model Recommendation (Both Platforms)
+- [ ] Use `sys-info` crate (`mem_info().total`) to read total RAM — works on desktop + Android
+- [ ] Auto-select recommended model based on RAM:
+  - <5 GB → "Fast" (0.5B)
+  - 5–10 GB → "Balanced" (1.5B)
+  - >10 GB → "Powerful" (3B)
+- [ ] User can override the recommendation
+- [ ] Show: "Your device has X GB RAM. We recommend [model]."
+
+### 7. Model Switching (Both Platforms)
+- [ ] Allow downloading a different model from Settings (both platforms)
+- [ ] When switching: unload current model before loading new one (memory management)
+- [ ] Show storage used by current model — manual delete, no auto-delete
+- [ ] **Desktop**: same behavior, simpler UI (no Wi-Fi check)
+
+### 8. Error Handling for Downloads (Both Platforms)
+- [ ] Network timeout → retry button with exponential backoff suggestion
+- [ ] Storage full mid-download → pause + message + resume after space freed
+- [ ] Corrupted download → offer re-download (verify with SHA256 checksum if server provides it)
+- [ ] Server error (HTTP 4xx/5xx) → clear error, not generic failure
+- [ ] **Android-only**: Wi-Fi dropped mid-download → pause + "Reconnect to Wi-Fi to continue"
+
+---
+
+## Feasibility Checklist
+
+| # | Check | Platform | Status |
+|---|-------|----------|--------|
+| 1 | Existing desktop wizard still works — zero regression | Desktop | ☐ |
+| 2 | Existing desktop download still works — zero regression | Desktop | ☐ |
+| 3 | Storage check via `fs2` compiles and works | Desktop | ☐ |
+| 4 | Storage check fallback via `StatFs` compiles for Android | Android | ☐ |
+| 5 | Wi-Fi detection works on Android 12, 13, 14 | Android | ☐ |
+| 6 | Wi-Fi-only toggle persisted and respected | Android | ☐ |
+| 7 | Foreground service notification shows during download | Android | ☐ |
+| 8 | App killed → resume from last byte on reopen | Both | ☐ |
+| 9 | `sys-info` RAM detection works on Android | Android | ☐ |
+| 10 | Model recommendation matches device RAM | Both | ☐ |
+| 11 | Model switching unloads old model without leak | Both | ☐ |
+| 12 | All download errors show user-friendly messages | Both | ☐ |
+
+---
 
 ## Blockers & Risks
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Wi-Fi / network detection requires Android native code | Medium | Write a minimal Tauri plugin or use `tauri-plugin-http` with connectivity check |
-| Wake lock requires Android foreground service | **High** | Large downloads need persistent notification; may require Kotlin plugin |
-| `fs2` crate for free space may not compile for Android | Low | Fall back to Android `StatFs` via JNI |
-| Users on slow/metered connections have bad experience | Medium | Offer smaller model as default; show clear size warnings |
-| Google Play may reject wake lock without foreground service | Low | We're sideloading initially; defer Play Store compliance |
+| Risk | Impact | Platform | Mitigation |
+|------|--------|----------|------------|
+| Wi-Fi / network detection requires Android native code | Medium | Android | Minimal Tauri plugin or JNI — budget 1 day |
+| Foreground service requires Play Store policy compliance | Medium | Android | Sideload first; defer Play Store compliance |
+| `fs2` free-space returns 0 on some Android filesystem mounts | Low | Android | `StatFs` fallback |
+| Desktop wizard accidentally broken by mobile wizard changes | **High** | Desktop | Explicit regression tests; mobile wizard is presentation-only changes |
+| `sys-info` RAM detection inaccurate on Android (reports virtual) | Low | Android | Cap at device total RAM from system properties as fallback |
+
+---
 
 ## Success Criteria
 
-- [ ] First-run wizard completes without confusion on device
-- [ ] Model download succeeds over Wi-Fi with clean progress UI
-- [ ] Model download warns on mobile data and respects Wi-Fi-only setting
-- [ ] Pause/resume works across app restarts
-- [ ] Storage space is checked before download starts
+### Desktop (must not regress)
+- [ ] Existing wizard flow unchanged — same steps, same layout
+- [ ] Model download works with progress, pause/resume
 - [ ] Model switching works without memory leaks
-- [ ] Total download time for the "Balanced" model (1 GB) ≤ 10 minutes on a 50 Mbps connection
+
+### Android (net new)
+- [ ] First-run wizard completes cleanly on 6.3" phone
+- [ ] Model download succeeds over Wi-Fi with clean progress UI
+- [ ] Mobile data warning fires and respects Wi-Fi-only toggle
+- [ ] Download resumes after app kill
+- [ ] Storage check fires before download if space is insufficient
+
+### Both
+- [ ] RAM-based model recommendation is shown and accurate
+- [ ] All error states show user-friendly messages
+- [ ] "Balanced" model (1 GB) downloads in ≤10 min on 50 Mbps connection
+
+---
 
 ## Exit Criteria
 
 M5 is **complete** when:
-1. A clean install of the app → first-run wizard → model download → ready state works end-to-end
-2. Download resilience is tested (background, kill, resume)
-3. Network and storage edge cases are handled gracefully
-4. Team reviews the first-run flow on a real device
+1. Desktop first-run wizard + download — zero regression confirmed
+2. Android clean install → wizard → download → ready state works end-to-end
+3. Download resilience tested: background + kill + resume on both platforms
+4. Network and storage edge cases handled gracefully on Android
+5. Team reviews first-run flow on a real Android device AND on desktop
