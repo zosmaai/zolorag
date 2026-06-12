@@ -12,10 +12,9 @@ These blockers were discovered during M1 and are the primary work of M2:
 | Blocker | Root Cause | Fix |
 |---------|------------|-----|
 | ✅ **gemm-f16 FP16 crash** | `#[target_feature(enable = "fp16")]` inline asm in `gemm-common` | Fixed: `rustflags = ["-C", "target-feature=+fp16"]` in `.cargo/config.toml` for `[target.aarch64-linux-android]` |
-| ✅ **llama.cpp POSIX_MADV** (patch applied directly) | Android Bionic libc doesn't define `posix_madvise()` or `POSIX_MADV_*` | Patch from `patches/llama-mmap-android.patch` applied directly to `llama.cpp/src/llama-mmap.cpp` in cargo registry. No env vars needed. **Still needs `[patch.crates-io]` permanent wiring** — see Task 0b. |
-| ✅ **Full `ml` feature build** | Both blockers above | `cargo ndk -t arm64-v8a build --lib` succeeds in 3m 32s (no env vars needed after direct patch) |
-| ✅ **Full `ml` feature build** | Both blockers above | `cargo ndk -t arm64-v8a build --lib` succeeds in 2m 20s (with env vars set) |
-| 🟡 **`pnpm tauri android dev`** | Tauri CLI's `dev` doesn't support `--no-default-features` | Should now work since full `ml` build compiles. Pending verification. |
+| ✅ **llama.cpp POSIX_MADV** (permanent fix) | Android Bionic libc doesn't define `posix_madvise()` or `POSIX_MADV_*` | `scripts/setup-android.sh` patches `~/.cargo/registry/` once. No env vars, no vendor/ in git. Verified 2026-06-12. |
+| ✅ **Full `ml` feature build** | Both blockers above | `env -u CFLAGS -u CXXFLAGS ANDROID_NDK=... cargo ndk -t arm64-v8a build --lib --release` — 5m 11s, 26 MB `.so` |
+| ❌ **`pnpm tauri android dev`** | adb server mismatch + build script env issues | `cargo build --target aarch64-linux-android` works standalone. Tauri's own invocation fails: (1) can't detect running emulator via adb, (2) build script fails intermittently. **Deferred — does not block M3/M4.** |
 
 ---
 
@@ -37,8 +36,17 @@ Once M2 is complete, `pnpm tauri android dev` becomes usable since the `ml` feat
 - [x] **llama.cpp POSIX_MADV (env var workaround)**: Pass `CXXFLAGS`/`CFLAGS` env vars with `-DPOSIX_MADV_*=MADV_* -Dposix_madvise(a,l,ad)=madvise(a,l,ad)`
 - [x] **Full build test**: `cargo ndk -t arm64-v8a build --lib` succeeds (2m 20s)
 
-### 0b. Permanent POSIX_MADV Patch (Not Blocking — Env Var Workaround Exists)
-- [ ] **Apply `patches/llama-mmap-android.patch` via `[patch.crates-io]`**: The env var approach is fragile — `CXXFLAGS`/`CFLAGS` persist in the shell and poison desktop builds (parens in `-Dposix_madvise(...)` cause cmake shell errors on macOS). To fix permanently, create a local copy of `llama-cpp-sys-2` with the patch applied and point to it with `[patch.crates-io]` in `Cargo.toml`. Until then, always build Android with `env -u CFLAGS -u CXXFLAGS ANDROID_NDK=... cargo ndk ...` and clear env vars before desktop builds.
+### 0b. Permanent POSIX_MADV + Full Android Toolchain Config ✅ COMPLETE
+- [x] **`scripts/setup-android.sh` created**: Patches `llama-cpp-sys-2` in `~/.cargo/registry/` once. Idempotent, safe to re-run after `cargo update`.
+- [x] **No vendor/ in git**: `vendor/` gitignored, registry patch is the source of truth.
+- [x] **`src-tauri/.cargo/config.toml` is the single source of truth** for the full Android toolchain:
+  - `ANDROID_NDK` / `NDK_ROOT` / `ANDROID_NDK_ROOT` → llama-cpp-sys-2 build.rs
+  - `CC_aarch64_linux_android` / `CXX_aarch64_linux_android` / `AR_aarch64_linux_android` → cc-rs
+  - `[target.aarch64-linux-android] linker` → rustc link step
+  - `rustflags = +fp16` → gemm-f16
+- [x] **Zero shell env vars needed**: plain `cargo build --target aarch64-linux-android --lib --release` succeeds in 2m 21s with NO env vars in shell. Verified 2026-06-12.
+- [❌] **`pnpm tauri android dev --release` still fails end-to-end** despite `.cargo/config.toml` being correct. Root cause: Tauri's adb detection fails to see the running emulator (adb server instance mismatch), and the build script environment differs from standalone cargo. Deferred.
+- [x] **Root cause of CFLAGS poison confirmed**: Old `CFLAGS`/`CXXFLAGS` were hardcoded in `.zshrc`. Removed. DO NOT set them — parentheses in `-Dposix_madvise(...)` break cmake on macOS.
 
 ### 1. Cross-Compile candle with tokenizers
 - [x] candle-core, candle-nn, candle-transformers, tokenizers compiled successfully for Android
@@ -83,14 +91,14 @@ Once M2 is complete, `pnpm tauri android dev` becomes usable since the `ml` feat
 - [x] **Breakdown**: Model data (mmap'd) ~1918 MB, KV cache 112 MB, compute buffer 262.5 MB, actual RSS much lower due to mmap
 - [x] **Documented**: See `src-tauri/src/bin/mem_profile.rs` for the profiler tool
 
-### 8. Verify `pnpm tauri android dev` 
+### 8. Verify `pnpm tauri android dev` ❌ BLOCKED — DEFERRED TO REVISIT
 - [x] **Release APK build confirmed**: 39 MB `zolorag-ml.apk` with ML support
-- [x] `cargo ndk -t arm64-v8a build --lib --release` **succeeds** (3m 32s)
-- [x] `pnpm tauri android build` and `pnpm tauri android dev` **require `ANDROID_NDK` env var** to be set:
-      ```bash
-      ANDROID_NDK=\$HOME/Library/Android/sdk/ndk/29.0.14206865 pnpm tauri android dev
-      ```
-- [ ] **Hot-reload verification**: Debug build takes too long (crate rebuild). Verify when doing actual development session.
+- [x] `cargo build --target aarch64-linux-android --lib --release` **succeeds standalone** (2m 21s, zero shell env vars — all config in `.cargo/config.toml`)
+- [x] **`.cargo/config.toml` is the single source of truth**: NDK, CC, CXX, AR, linker all declared. No shell setup required.
+- [❌] **`pnpm tauri android dev --release` still fails** with two persistent issues:
+  1. `Error No available Android Emulator detected` — Tauri/adb cannot see running emulator despite `emulator-5554 device` visible to adb in our session. Likely an adb server instance mismatch.
+  2. `build script failed, must exit now` — intermittent; may be CFLAGS residue or cmake cache from prior failed runs.
+- [⏸] **Deferred**: Core M2 goals (compile, embedding, LLM, memory) are all ✅. The dev workflow UX is a tooling issue that does NOT block M3 or M4 implementation work. Revisit when physical device is available.
 
 ---
 
@@ -99,17 +107,17 @@ Once M2 is complete, `pnpm tauri android dev` becomes usable since the `ml` feat
 | # | Check | Status | Notes |
 |---|-------|--------|-------|
 | 1 | gemm-f16 compiles with `+fp16` RUSTFLAGS | ✅ | In `.cargo/config.toml` for `[target.aarch64-linux-android]` |
-| 2 | llama.cpp compiles with POSIX_MADV fix | 🟡 | Works via env vars but not permanent — `patches/llama-mmap-android.patch` exists but isn't wired into build |
-| 3 | `cargo ndk build --lib` (default features) succeeds | ✅ | With env vars set |
+| 2 | llama.cpp compiles with POSIX_MADV fix | ✅ | `scripts/setup-android.sh` patches registry. No env vars needed — all toolchain config in `.cargo/config.toml`. |
+| 3 | `cargo build --target aarch64-linux-android --lib --release` succeeds | ✅ | Zero shell env vars needed — `.cargo/config.toml` sets NDK, CC, CXX, AR, linker. 2m 21s. |
 | 4 | candle compiles for `aarch64-linux-android` | ✅ | |
 | 5 | tokenizers crate loads `tokenizer.json` on Android | ✅ | No `mmap` issues |
 | 6 | llama.cpp builds for Android via NDK | ✅ | 26 MB `.so` release build |
 | 7 | `llama-cpp-2` crate links successfully | ✅ | |
 | 8 | Full APK with ML produced | ✅ | 39 MB signed APK on emulator |
-| 9 | Permanent fix (no env vars needed) | 🟡 | ***Env vars still required*** — need to apply patch via `[patch.crates-io]` |
+| 9 | Permanent fix (no shell env vars needed) | ✅ | `.cargo/config.toml` `[env]` section + `scripts/setup-android.sh` registry patch. Works from any terminal. Verified 2026-06-12. |
 | 10 | Desktop build not broken | ✅ | `cargo test --lib` — all 19 tests pass |
 | 11 | `pnpm tauri android build` works with ML | ✅ | Verified end-to-end |
-| 12 | `pnpm tauri android dev` | ⏸ | Build phase works; dev mode needs more testing |
+| 12 | `pnpm tauri android dev` | ❌ | **DEFERRED.** `cargo build` standalone ✅. Tauri invocation fails: adb can't detect emulator + build script env mismatch. Does not block M3/M4. |
 | 13 | Background thread safety (`spawn_blocking` fix) | ✅ | Applied in `ask_question()` — needs device verification |
 | 14 | Broken validation test (`tests/validation.rs`) fixed | ✅ | Removed `hf_hub` dep (not in Cargo.toml), uses `CandleEncoder::new(&path)` |
 | 15 | Embedding verification (bit-match) | ✅ | 2688 bits match exactly desktop vs Android (Pixel 7 emulator) |
@@ -118,15 +126,17 @@ Once M2 is complete, `pnpm tauri android dev` becomes usable since the `ml` feat
 
 ## Blockers & Risks
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| llama.cpp build system doesn't detect NDK | **High** | Use explicit NDK CMake toolchain file; set `CC_aarch64_linux_android`, `CXX_aarch64_linux_android` env vars |
-| `llama-cpp-2` crate's build script doesn't support Android | **High** | Fork the crate or write a custom build script that invokes CMake with NDK |
-| Memory pressure causes device to kill the app | **High** | Start with smallest viable model (Qwen2.5-0.5B); test on 8 GB device first |
-| Float math differences between ARM NEON and x86-64 | Low | Verified: bit vectors match exactly, float diff ≤ 1e-6 |
-| `tokenizers` uses `mmap` which behaves differently on Android | Medium | Switch to in-memory loading: `Tokenizer::from_file()` instead of `from_blob()` |
-| Disk space during builds | Medium | llama.cpp CMake build + Rust debug artifacts can consume 10+ GB. Clean `target/` between major attempts. |
-| **POSIX_MADV env vars persist and poison desktop builds** | **High** | `CXXFLAGS`/`CFLAGS` set for Android cross-compilation contain `-Dposix_madvise(...)` — the parentheses cause cmake shell errors on macOS desktop builds. **Fix:** Always build desktop with `env -u CFLAGS -u CXXFLAGS cargo ...`. Long-term: apply patch permanently via `[patch.crates-io]`. |
+| Risk | Impact | Status |
+|------|--------|--------|
+| llama.cpp build system doesn't detect NDK | ~~High~~ | ✅ **RESOLVED** — `.cargo/config.toml` `[env]` sets `ANDROID_NDK`/`NDK_ROOT`/`ANDROID_NDK_ROOT` |
+| `llama-cpp-2` crate's build script doesn't support Android | ~~High~~ | ✅ **RESOLVED** — builds in 2m 21s |
+| `cc-rs` can't find `aarch64-linux-android-clang` | ~~High~~ | ✅ **RESOLVED** — `CC_`/`CXX_`/`AR_aarch64_linux_android` in `.cargo/config.toml` |
+| POSIX_MADV env vars poison desktop cmake builds | ~~High~~ | ✅ **RESOLVED** — `CFLAGS`/`CXXFLAGS` removed from `.zshrc`; `scripts/setup-android.sh` patches registry |
+| Float math differences ARM NEON vs x86-64 | ~~Low~~ | ✅ **RESOLVED** — bit vectors match exactly, float diff ≤ 1e-6 |
+| `tokenizers` mmap on Android | ~~Medium~~ | ✅ **RESOLVED** — `Tokenizer::from_file()` uses `std::fs::read` internally |
+| Memory pressure kills app | **High** | 🟡 Not yet tested on physical device. Emulator RSS = 1.39 GB. |
+| Disk space during builds | Medium | ⚠️ Debug builds consume >2 GB. Use `--release` always. Clean `target/aarch64*/debug` regularly. |
+| **`pnpm tauri android dev` adb emulator detection** | **High (deferred)** | ❌ Tauri can't see running emulator. Workaround: start emulator via **Android Studio AVD Manager**, then `adb kill-server && adb start-server` before running Tauri. |
 
 ## Success Criteria
 
@@ -135,15 +145,38 @@ Once M2 is complete, `pnpm tauri android dev` becomes usable since the `ml` feat
 - [ ] App survives 5 minutes of continuous chat without ANR or crash
 - [x] Model loading completes within 30 seconds on a physical device — **1.89s on emulator**
 - [ ] Peak memory usage ≤ 3 GB for Qwen2.5-1.5B-Q4_K_M
-- [ ] `pnpm tauri android dev` launches on emulator with full ML support
+- [❌] `pnpm tauri android dev --release` — **DEFERRED**. Standalone `cargo build` works. Tauri wrapper fails with adb/emulator detection + build env issues.
 
 ## Exit Criteria
 
 M2 is **complete** when:
-1. Both ML components compile and run on Android
-2. Embedding vectors are verified correct
-3. LLM inference produces reasonable output at a usable speed
-4. Background threading is confirmed working (no ANR)
-5. Memory profiling data is documented
-6. `pnpm tauri android dev` works end-to-end
-7. Team reviews the performance data and agrees the numbers are acceptable to proceed
+1. ✅ Both ML components compile and run on Android
+2. ✅ Embedding vectors are verified correct
+3. ✅ LLM inference produces reasonable output at a usable speed
+4. 🟡 Background threading confirmed working (no ANR) — `spawn_blocking` implemented; needs device verification
+5. ✅ Memory profiling data is documented
+6. ❌ `pnpm tauri android dev` end-to-end — **DEFERRED** (adb/emulator detection broken in Tauri wrapper)
+7. ⏸ Team reviews performance data — 0.19 tok/s emulator; physical device needed for ≥3 tok/s
+
+---
+
+## 🚦 M2 Final Status: PARTIALLY COMPLETE — Core Goals Met, Dev Workflow Deferred
+
+**What is done and verified:**
+- Cross-compilation pipeline: `cargo build --target aarch64-linux-android` ✅ (2m 21s, zero shell vars)
+- Embedding on-device: bit-exact match desktop vs Android ✅
+- LLM on-device: coherent output, model loads in 1.89s ✅
+- Memory: 1.39 GB peak RSS, well within limits ✅
+- `spawn_blocking` threading: implemented ✅
+- `.cargo/config.toml`: full self-contained toolchain config ✅
+- `scripts/setup-android.sh`: permanent POSIX_MADV patch ✅
+
+**What is deferred (does NOT block M3/M4):**
+
+| # | Task | Blocker | When to Revisit |
+|---|------|---------|----------------|
+| A | `pnpm tauri android dev` APK install + launch | adb server mismatch between Tauri and running emulator. Try: start emulator via **Android Studio AVD Manager** (not CLI) + `adb kill-server && adb start-server` | When doing M5/M6 dev |
+| B | Streaming events + ANR test | Depends on A | Same |
+| C | Cancellation test | Depends on A | Same |
+| D | ≥3 tok/s on physical device | Need real device | When device available |
+| E | Peak memory ≤3 GB for Qwen2.5-1.5B | Need device + model | Same |
