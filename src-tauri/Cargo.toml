@@ -59,3 +59,15 @@ ml = [
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
+
+# ── Vendored fork of llama-cpp-sys-2 with Android Bionic POSIX_MADV fix ──
+# Upstream llama.cpp's src/llama-mmap.cpp uses posix_madvise() / POSIX_MADV_*
+# constants that don't exist on Android's Bionic libc. The vendored copy under
+# vendor/llama-cpp-sys-2/ has a minimal __ANDROID__ guard added in
+# llama.cpp/src/llama-mmap.cpp. No other changes vs. crates.io v0.1.146.
+#
+# This makes `cargo build --target aarch64-linux-android` (and therefore
+# `pnpm tauri android dev` / `pnpm tauri android build`) succeed with zero
+# setup steps after `git clone`. No registry mutation, no env vars.
+[patch.crates-io]
+llama-cpp-sys-2 = { path = "../vendor/llama-cpp-sys-2" }

@@ -10,25 +10,33 @@
 | Android NDK 29+ | via SDK Manager | `$ANDROID_HOME/ndk/29.*/` |
 | Rust | 1.94+ | `rustc --version` |
 | Rust Android target | aarch64-linux-android | `rustup target list --installed` |
-| cargo-ndk | 4.x | `cargo ndk --version` |
 | Node.js | 22+ | `node --version` |
 | pnpm | 10+ | `pnpm --version` |
 | Tauri CLI | 2.11+ | `pnpm tauri --version` |
+
+> `cargo-ndk` is **not** required — Tauri's android subcommand calls
+> `cargo build --target aarch64-linux-android` directly, and the full toolchain
+> is configured in `src-tauri/.cargo/config.toml`.
 
 ### Environment Variables
 
 Add these to your shell profile (`~/.zshrc`):
 
 ```bash
-export ANDROID_HOME=$HOME/Library/Android/sdk
+# Use the COMPLETE homebrew SDK (must contain platform-tools/adb + emulator/)
+export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 export ANDROID_SDK_ROOT=$ANDROID_HOME
-export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865
-export ANDROID_NDK=$ANDROID_NDK_HOME
+export NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865
+export ANDROID_NDK_HOME=$NDK_HOME
 export JAVA_HOME=/Applications/Android\ Studio.app/Contents/jbr/Contents/Home
-export PATH=$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$ANDROID_HOME/tools:$ANDROID_HOME/tools/bin:$PATH
+export PATH=$ANDROID_HOME/emulator:$ANDROID_HOME/platform-tools:$PATH
 ```
 
 Reload: `source ~/.zshrc`
+
+> **Do NOT export `CFLAGS` or `CXXFLAGS`.** The Android-Bionic POSIX_MADV fix is
+> baked into `vendor/llama-cpp-sys-2/`, wired via `[patch.crates-io]`. Any
+> host-level `CFLAGS` will only hurt other builds.
 
 ---
 
@@ -77,36 +85,30 @@ This creates `src-tauri/gen/android/` with the Android Studio project.
 
 ## Building
 
-### Quick Build (using helper script)
+Stock Tauri CLI — no wrapper scripts, no exported `CFLAGS`/`CXXFLAGS`,
+no `cargo-ndk`. All cross-compile config lives in `src-tauri/.cargo/config.toml`.
+
+### Dev (live-reload on emulator or attached device)
 
 ```bash
-./scripts/build-android.sh
+# 1. Boot an emulator (or use Android Studio's AVD Manager)
+$ANDROID_HOME/emulator/emulator -avd Pixel_7_API34 &
+
+# 2. Run
+pnpm tauri android dev           # or: pnpm android:dev
 ```
 
-This sets the required `CXXFLAGS` for llama.cpp and builds a release APK.
+### Release APK
 
-### Manual Build (without ML features — for toolchain verification)
+```bash
+pnpm tauri android build --target aarch64    # or: pnpm android:build
+```
+
+### Toolchain-only verification (skip ML, fast)
 
 ```bash
 cd src-tauri
-ANDROID_NDK=$ANDROID_HOME/ndk/29.0.14206865 \
-  CARGO_BUILD_NO_DEFAULT_FEATURES=true \
-  pnpm tauri android build --target aarch64
-```
-
-### Manual Full Build (with ML — candle + llama.cpp)
-
-```bash
-cd src-tauri
-# Required: CXXFLAGS for llama.cpp POSIX_MADV fix on Android
-CXXFLAGS="-DPOSIX_MADV_NORMAL=MADV_NORMAL \
-  -DPOSIX_MADV_RANDOM=MADV_RANDOM \
-  -DPOSIX_MADV_SEQUENTIAL=MADV_SEQUENTIAL \
-  -DPOSIX_MADV_WILLNEED=MADV_WILLNEED \
-  -DPOSIX_MADV_DONTNEED=MADV_DONTNEED \
-  -Dposix_madvise(addr,len,advice)=madvise(addr,len,advice)" \
-ANDROID_NDK=$ANDROID_HOME/ndk/29.0.14206865 \
-  pnpm tauri android build --target aarch64
+cargo build --target aarch64-linux-android --lib --no-default-features
 ```
 
 ### Output

@@ -1,0 +1,8 @@
+# Mark vendored llama-cpp-sys-2 as third-party so:
+#   - GitHub's "Languages" stats ignore it
+#   - GitHub PR diffs collapse it by default
+#   - `git diff` won't bury changes in our actual source
+# The only file we modify here is llama.cpp/src/llama-mmap.cpp
+# (Android Bionic POSIX_MADV fix — see src-tauri/Cargo.toml [patch.crates-io]).
+vendor/** linguist-vendored
+vendor/** linguist-generated=false

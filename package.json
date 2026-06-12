@@ -18,7 +18,9 @@
 		"builds:mac": "node scripts/check-platform.mjs macos && pnpm tauri build --bundles dmg && node scripts/copy-builds.mjs macos",
 		"builds:linux": "node scripts/check-platform.mjs linux && pnpm tauri build --bundles deb,appimage && node scripts/copy-builds.mjs linux",
 		"builds:win": "node scripts/check-platform.mjs windows && pnpm tauri build --bundles nsis && node scripts/copy-builds.mjs windows",
-		"builds": "pnpm tauri build && node scripts/copy-builds.mjs"
+		"builds": "pnpm tauri build && node scripts/copy-builds.mjs",
+		"android:dev": "tauri android dev",
+		"android:build": "tauri android build --target aarch64"
 	},
 	"pnpm": {
 		"onlyBuiltDependencies": [

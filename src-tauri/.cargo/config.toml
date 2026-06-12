@@ -5,37 +5,45 @@ ar     = "/opt/homebrew/bin/x86_64-w64-mingw32-ar"
 
 # ─── Android cross-compilation ────────────────────────────────────────────────
 #
-# Tauri calls plain `cargo build --target aarch64-linux-android` (not cargo-ndk),
-# so we must configure the full toolchain here.  Without this, cc-rs and cmake
-# can't find the Android cross-compiler and llama-cpp-sys-2's build.rs panics.
+# Tauri's android subcommand calls `cargo build --target aarch64-linux-android`
+# directly (it does NOT use cargo-ndk), so the full toolchain must be wired up
+# here in cargo's config. With this file in place,
 #
-# All paths point to the NDK installed via homebrew:
-#   /opt/homebrew/share/android-commandlinetools/ndk/29.0.14206865
+#     pnpm tauri android dev
+#     pnpm tauri android build
 #
-# force = false (default): shell env takes precedence if the var is already set.
-# Update the NDK version in all paths below if you upgrade the NDK.
+# work from any clean shell — no wrapper scripts, no exported env vars, no
+# registry patching. The only out-of-tree requirement is that `ANDROID_HOME`
+# and `NDK_HOME` (or `ANDROID_NDK_HOME`) are exported in your shell so that
+# the Tauri CLI itself (which reads them for adb / emulator detection) is
+# happy. The cargo toolchain below uses absolute paths and ignores them.
+#
+# NDK version: bump the four absolute paths below if you upgrade the NDK.
 
 [env]
-# ── NDK root (checked by llama-cpp-sys-2 build.rs) ──
+# ── NDK root (llama-cpp-sys-2 build.rs checks these) ──
 ANDROID_NDK      = "/opt/homebrew/share/android-commandlinetools/ndk/29.0.14206865"
 NDK_ROOT         = "/opt/homebrew/share/android-commandlinetools/ndk/29.0.14206865"
 ANDROID_NDK_ROOT = "/opt/homebrew/share/android-commandlinetools/ndk/29.0.14206865"
 
-# ── C/C++ cross-compiler (checked by cc-rs for native deps) ──
+# ── C / C++ cross-compiler (cc-rs picks these up for native deps) ──
 CC_aarch64_linux_android  = "/opt/homebrew/share/android-commandlinetools/ndk/29.0.14206865/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang"
 CXX_aarch64_linux_android = "/opt/homebrew/share/android-commandlinetools/ndk/29.0.14206865/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang++"
 AR_aarch64_linux_android  = "/opt/homebrew/share/android-commandlinetools/ndk/29.0.14206865/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar"
 
+# ── Defensive: neutralise any host CFLAGS/CXXFLAGS the user's shell may
+#    have exported (e.g. the old `-Dposix_madvise(...)` workaround from a
+#    previous version of this project). cc-rs prefers the target-scoped
+#    variables below over the unscoped ones, so empty here = "use only the
+#    compiler defaults", which is what cmake/llama.cpp want.
+#    `force = true` overrides whatever is in the inherited environment. ──
+CFLAGS_aarch64_linux_android   = { value = "", force = true }
+CXXFLAGS_aarch64_linux_android = { value = "", force = true }
+
 # ─── Android target flags ─────────────────────────────────────────────────────
 [target.aarch64-linux-android]
-# Linker for Rust crates (rustc uses this for the final link step)
+# Linker for rustc's final link step
 linker = "/opt/homebrew/share/android-commandlinetools/ndk/29.0.14206865/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang"
 
 # +fp16: required for gemm-f16 (candle dependency) — prevents runtime crash
 rustflags = ["-C", "target-feature=+fp16"]
-
-# ─── POSIX_MADV patch reminder ─────────────────────────────────────────────────
-# Run `bash scripts/setup-android.sh` once after cloning or after `cargo update`
-# to patch llama-cpp-sys-2 in ~/.cargo/registry.
-# DO NOT set CFLAGS/CXXFLAGS in the shell — parentheses in -Dposix_madvise(...)
-# break cmake on macOS.

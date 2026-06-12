@@ -21,8 +21,8 @@ CI must build and test **both** targets. Android-only CI leaves desktop regressi
 ## Key Decisions from M2 (Do Not Revert)
 
 - **No `cargo-ndk`** — Tauri calls plain `cargo build --target aarch64-linux-android`. The full NDK toolchain is declared in `src-tauri/.cargo/config.toml` `[env]` section. CI just needs the NDK installed at the correct path.
-- **No shell env var exports for CFLAGS/CXXFLAGS** — parentheses in `-Dposix_madvise(...)` break cmake on macOS. The `.cargo/config.toml` approach avoids this entirely.
-- **`scripts/setup-android.sh`** — run once in CI before Android build to patch `llama-cpp-sys-2` in `~/.cargo/registry`. It is idempotent.
+- **No shell env var exports for CFLAGS/CXXFLAGS** — the Android POSIX_MADV fix lives in the **vendored** `vendor/llama-cpp-sys-2/` (wired via `[patch.crates-io]`), not in env vars. `.cargo/config.toml` additionally `force`-empties `CFLAGS_aarch64_linux_android` for defence in depth.
+- **No setup script** — `git clone` is enough. The vendor dir is checked in; cargo picks it up via the `[patch.crates-io]` block in `src-tauri/Cargo.toml`.
 - **NDK version**: `29.0.14206865` — this is what `.cargo/config.toml` references. CI must install this exact version.
 
 ---
@@ -40,7 +40,6 @@ CI must build and test **both** targets. Android-only CI leaves desktop regressi
   - Local: `/opt/homebrew/share/android-commandlinetools/ndk/29.0.14206865` (macOS homebrew)
   - CI: `$ANDROID_HOME/ndk/29.0.14206865`
   - **Solution**: `.cargo/config.toml` should use `$ANDROID_NDK_ROOT` interpolation, OR the CI step sets the env vars to override the config values (`force = false` means env takes precedence)
-- [ ] Run `bash scripts/setup-android.sh` to patch `llama-cpp-sys-2` in registry
 - [ ] Cache:
   - `~/.cargo/registry` (Cargo dependency downloads)
   - `~/.cargo/git` (git-based deps)
@@ -146,38 +145,30 @@ Since `.cargo/config.toml` uses `force = false`, shell env takes precedence over
 - [ ] `sccache` for Rust compilation across runs (optional but effective)
 - [ ] Gradle: `ORG_GRADLE_PROJECT_org.gradle.workers.max=2` to prevent OOM on CI
 
-### 10. Local Build Scripts
+### 10. Local Build Commands (no wrapper scripts)
 
-- [ ] `scripts/setup-android.sh` — patch `llama-cpp-sys-2` in registry (already exists, run before Android builds)
-- [ ] `scripts/build-android.sh` — full Android build (update to remove `cargo-ndk`, use plain `cargo build`):
-  ```bash
-  #!/bin/bash
-  set -euo pipefail
-  bash scripts/setup-android.sh
-  pnpm install
-  pnpm build
-  pnpm tauri android build --apk
-  ```
-- [ ] `scripts/build-desktop.sh` — full desktop build:
-  ```bash
-  #!/bin/bash
-  set -euo pipefail
-  pnpm install
-  pnpm build
-  pnpm tauri build
-  ```
-- [ ] Both scripts check for required tools and print clear errors if missing
+Local builds use stock Tauri CLI — the wrapper scripts that existed during M2
+have been removed. All state lives in version-controlled files
+(`src-tauri/.cargo/config.toml`, `src-tauri/Cargo.toml` `[patch.crates-io]`,
+`vendor/llama-cpp-sys-2/`).
+
+```bash
+# Android dev
+pnpm android:dev          # ≡ pnpm tauri android dev
+
+# Android release APK
+pnpm android:build        # ≡ pnpm tauri android build --target aarch64
+
+# Desktop
+pnpm tauri build
+```
 
 ### 11. Build Documentation
 
-- [ ] Update `BUILD_ANDROID.md`:
-  - Reference `.cargo/config.toml` as the toolchain config (no manual env vars)
-  - Reference `scripts/setup-android.sh` (run once per clone or `cargo update`)
-  - NDK version: `29.0.14206865`
-  - Known issue: `pnpm tauri android dev` emulator detection (see M2 deferred items)
-- [ ] Update `BUILD_DESKTOP.md` (or main README):
-  - Standard Tauri desktop build instructions
-  - No Android env vars needed for desktop builds
+- [x] `BUILD_ANDROID.md` updated to reference stock Tauri CLI workflow and
+      vendored `llama-cpp-sys-2`; no wrapper-script references remain.
+- [ ] Update `BUILD_DESKTOP.md` (or main README): standard Tauri desktop build
+      instructions, no Android env vars needed for desktop builds.
 
 ---
 
@@ -188,7 +179,7 @@ Since `.cargo/config.toml` uses `force = false`, shell env takes precedence over
 | 1 | `cargo test --lib` passes in CI | Desktop | ☐ |
 | 2 | NDK 29.0.14206865 installable via `sdkmanager` in CI | Android | ☐ |
 | 3 | CI env var override takes precedence over `.cargo/config.toml` | Android | ☐ |
-| 4 | `scripts/setup-android.sh` runs successfully in CI | Android | ☐ |
+| 4 | `vendor/llama-cpp-sys-2/` resolved via `[patch.crates-io]` in CI | Android | ☐ |
 | 5 | `cargo build --target aarch64-linux-android --lib --release` in CI | Android | ☐ |
 | 6 | `pnpm tauri android build` succeeds in CI | Android | ☐ |
 | 7 | APK signing passes `apksigner verify` | Android | ☐ |
@@ -206,7 +197,7 @@ Since `.cargo/config.toml` uses `force = false`, shell env takes precedence over
 | Risk | Impact | Platform | Mitigation |
 |------|--------|----------|------------|
 | NDK 29.0.14206865 not available via `sdkmanager` in CI | **High** | Android | Pin to available version; update `.cargo/config.toml` if version changes |
-| `scripts/setup-android.sh` fails if registry path changes after `cargo update` | Medium | Android | Script already handles this (searches by glob); re-test in CI |
+| `cargo update` bumps `llama-cpp-2` to a version requiring a newer `llama-cpp-sys-2` | Medium | Android | Re-vendor `llama-cpp-sys-2` at the new version, re-apply the `__ANDROID__` guard in `llama.cpp/src/llama-mmap.cpp`, commit. Catch via CI build. |
 | macOS CI runner is Apple Silicon but keystore signed on Intel | Low | Desktop | Use universal binary or pin to `macos-latest` |
 | GitHub Actions cache evicted (10 GB limit) | Low | Both | Monitor cache size; evict Android target cache first |
 | `pnpm tauri android dev` emulator detection (from M2) | Medium | Android | Use `tauri android build` (not `dev`) in CI — this is unaffected |
