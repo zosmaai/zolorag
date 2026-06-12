@@ -42,7 +42,7 @@ All of the above, plus:
 
 | Addition | Why |
 |----------|-----|
-| `TermIndex` | Keyword overlap scoring for named-entity queries. After testing, pure binary Hamming scored only 69% for "Shanvit Shetty" on a resume where the name was present. |
+| `TermIndex` | Keyword overlap scoring for named-entity queries. After testing, pure binary Hamming scored only 69% for a person's name on a resume where the name was present. |
 | `cosine_similarity()` | Float32 rescoring of binary candidates. Binary Hamming preserves ~92.5% of dense retrieval accuracy; cosine rescoring pushes it to ~96%. |
 | `float_vectors: Option<Vec<Vec<f32>>>` | Stored alongside binary vectors for the rescoring pass. 1,536 bytes/chunk extra on disk, zero in memory during Hamming pass. |
 | `search_hybrid(q_bv, q_f32, text, k)` | Three-stage pipeline: Hamming scan → float32 cosine rescore on top candidates → keyword blend. |

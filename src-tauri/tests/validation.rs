@@ -17,9 +17,9 @@
 //! cargo test --test validation -- --ignored --nocapture
 //! ```
 
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use hf_hub::api::sync::Api;
 use zolo_rag_lib::ml::CandleEncoder;
 
 // ---------------------------------------------------------------------------
@@ -132,29 +132,15 @@ const TEST_SENTENCES: &[&str] = &[
     "The marine biology expedition studied coral reefs",
 ];
 
-/// Check if the candle embedding model is cached locally.
-fn candle_model_cached() -> bool {
-    zolo_rag_lib::ml::download::is_embedding_model_cached()
-}
-
-/// Ensure the model is downloaded, then return a cached CandleEncoder.
+/// Find the model directory, downloading if needed, then return a cached CandleEncoder.
 fn get_candle_encoder() -> Option<&'static CandleEncoder> {
     static CANDLE: OnceLock<Option<CandleEncoder>> = OnceLock::new();
     CANDLE.get_or_init(|| {
-        if !candle_model_cached() {
-            log::warn!("Candle model not cached, attempting download...");
-            let app_dir = std::env::temp_dir().join("zolo_rag_validation");
-            let _ = std::fs::create_dir_all(&app_dir);
-            match zolo_rag_lib::ml::download::ensure_embedding_model(&app_dir) {
-                Ok(_) => {}
-                Err(e) => {
-                    log::error!("Failed to download candle model: {e}");
-                    return None;
-                }
-            }
-        }
-        match Api::new() {
-            Ok(api) => match CandleEncoder::new(&api) {
+        let app_dir = std::env::temp_dir().join("zolo_rag_validation");
+        let _ = std::fs::create_dir_all(&app_dir);
+
+        match zolo_rag_lib::ml::download::ensure_embedding_model(&app_dir) {
+            Ok(model_dir) => match CandleEncoder::new(&model_dir) {
                 Ok(encoder) => Some(encoder),
                 Err(e) => {
                     log::error!("Failed to init CandleEncoder: {e}");
@@ -162,8 +148,25 @@ fn get_candle_encoder() -> Option<&'static CandleEncoder> {
                 }
             },
             Err(e) => {
-                log::error!("Failed to init HF Hub API: {e}");
-                None
+                log::error!("Failed to download/ensure embedding model: {e}");
+                // Try the old cache path as fallback
+                let home = std::env::var("HOME").unwrap_or_default();
+                let old_path = PathBuf::from(&home)
+                    .join(".cache")
+                    .join("huggingface")
+                    .join("hub")
+                    .join("models--sentence-transformers--all-MiniLM-L6-v2");
+                if old_path.join("model.safetensors").exists() {
+                    match CandleEncoder::new(&old_path) {
+                        Ok(encoder) => Some(encoder),
+                        Err(e) => {
+                            log::error!("Failed to init CandleEncoder from old cache: {e}");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
             }
         }
     })

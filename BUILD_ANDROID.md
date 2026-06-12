@@ -77,7 +77,15 @@ This creates `src-tauri/gen/android/` with the Android Studio project.
 
 ## Building
 
-### Quick Build (without ML features — for toolchain verification)
+### Quick Build (using helper script)
+
+```bash
+./scripts/build-android.sh
+```
+
+This sets the required `CXXFLAGS` for llama.cpp and builds a release APK.
+
+### Manual Build (without ML features — for toolchain verification)
 
 ```bash
 cd src-tauri
@@ -86,12 +94,18 @@ ANDROID_NDK=$ANDROID_HOME/ndk/29.0.14206865 \
   pnpm tauri android build --target aarch64
 ```
 
-### Full Build (with ML — candle + llama.cpp)
+### Manual Full Build (with ML — candle + llama.cpp)
 
 ```bash
 cd src-tauri
+# Required: CXXFLAGS for llama.cpp POSIX_MADV fix on Android
+CXXFLAGS="-DPOSIX_MADV_NORMAL=MADV_NORMAL \
+  -DPOSIX_MADV_RANDOM=MADV_RANDOM \
+  -DPOSIX_MADV_SEQUENTIAL=MADV_SEQUENTIAL \
+  -DPOSIX_MADV_WILLNEED=MADV_WILLNEED \
+  -DPOSIX_MADV_DONTNEED=MADV_DONTNEED \
+  -Dposix_madvise(addr,len,advice)=madvise(addr,len,advice)" \
 ANDROID_NDK=$ANDROID_HOME/ndk/29.0.14206865 \
-  RUSTFLAGS="-C target-feature=+fp16" \
   pnpm tauri android build --target aarch64
 ```
 

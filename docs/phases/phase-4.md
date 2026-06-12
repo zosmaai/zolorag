@@ -198,7 +198,7 @@ Run the diagnostic queries from Phase 2/3:
 
 | Query | Expected top result |
 |-------|-------------------|
-| "Shanvit Shetty" | Contact header chunk (keyword boost verifies this holds) |
+| "John Doe" | Contact header chunk (keyword boost verifies this holds) |
 | "person who built chatbot packages" | Side Projects chunk (semantic ranking verifies this holds) |
 | "refund policy" | The chunk about refunds |
 
@@ -283,7 +283,7 @@ After validation passes, `OllamaEncoder` and its HTTP client are removed entirel
 - [ ] `CandleEncoder` produces `EncodedVector` identical in structure to `OllamaEncoder`
 - [ ] Bit agreement ≥ 95% between candle and Ollama on 100 test sentences
 - [ ] Top-5 ranking overlap ≥ 80% on 20 test queries
-- [ ] Known queries (Shanvit Shetty, chatbot packages) return the same top result
+- [ ] Known queries (name match, chatbot packages) return the same top result
 - [ ] Encode speed is not regressed (< 50ms per text)
 - [ ] Model downloads and loads successfully on first run
 - [ ] All 18 existing unit tests still pass

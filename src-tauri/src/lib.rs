@@ -428,12 +428,20 @@ async fn ask_question(
         .context_builder
         .build_prompt(&query, &chunks, &history);
 
-    // Run generation. Always return the engine to state, even on error.
+    // Run generation on a background thread to avoid blocking the async runtime.
+    // This is critical for Android where blocking the main thread for >5s causes ANR.
+    // The Tauri Emitter is thread-safe, so event callbacks work from any thread.
+    // We return the engine back alongside the result so it can be reused.
     let app_clone = app.clone();
-    let generate_result = engine.generate(&prompt, |token| {
-        let _ = app_clone.emit("rag:token", token.to_string());
-        true
-    });
+    let (engine, generate_result) = tokio::task::spawn_blocking(move || {
+        let result = engine.generate(&prompt, |token| {
+            let _ = app_clone.emit("rag:token", token.to_string());
+            true
+        });
+        (engine, result)
+    })
+    .await
+    .map_err(|e| format!("Generation task join failed: {e}"))?;
 
     let answer = match generate_result {
         Ok(answer) => {

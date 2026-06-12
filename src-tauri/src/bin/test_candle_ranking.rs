@@ -74,7 +74,7 @@ fn main() -> Result<(), String> {
         "Jhon Doe",
         "person who built chatbot packages",
         "Who built the chatbot package?",
-        "How many years of experience does Shanvit have?",
+        "How many years of experience does the candidate have?",
         "Fullstack Engineer at OpenAI",
         "Frontend Engineer",
         "Python programming",
