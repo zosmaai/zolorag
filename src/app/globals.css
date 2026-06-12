@@ -95,6 +95,34 @@ body {
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
 	line-height: 1.5;
+	/* Prevent iOS/Android double-tap zoom on interactive elements */
+	-webkit-tap-highlight-color: transparent;
+}
+
+/* 100dvh handles Android URL/keyboard chrome correctly. We only override
+   when the browser supports the dynamic-viewport unit; older WebViews fall
+   back to the 100vh declared above. (Split into @supports to satisfy biome's
+   no-duplicate-property rule while preserving the fallback chain.) */
+@supports (height: 100dvh) {
+	body {
+		height: 100dvh;
+	}
+}
+
+/* Reusable: paint under system status / nav bars on Android edge-to-edge */
+.safe-area-top {
+	padding-top: env(safe-area-inset-top, 0px);
+}
+.safe-area-bottom {
+	padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* All <button>, <a>, role="button" inherit this — stops 300ms double-tap delay
+   on Android WebView, keeps single-tap snappy. */
+button,
+[role="button"],
+a {
+	touch-action: manipulation;
 }
 
 /* ── Scrollbar ── */
@@ -235,4 +263,37 @@ body {
 }
 .cursor-blink {
 	animation: blink 0.8s step-end infinite;
+}
+
+/* ── Bottom sheet (mobile SourcePanel) ──
+   Pure CSS, no JS drag lib. The component toggles `.is-open` to slide up. */
+@keyframes sheet-slide-up {
+	from {
+		transform: translateY(100%);
+	}
+	to {
+		transform: translateY(0);
+	}
+}
+@keyframes sheet-backdrop-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+.animate-sheet-slide-up {
+	animation: sheet-slide-up 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.animate-sheet-backdrop {
+	animation: sheet-backdrop-in 0.2s ease-out;
+}
+
+/* ── Mobile touch-target helper ── */
+@media (pointer: coarse) and (max-width: 900px) {
+	.tap-target {
+		min-height: 48px;
+		min-width: 48px;
+	}
 }

@@ -23,6 +23,9 @@ export default function DropZone({ onBrowse }: DropZoneProps) {
 				e.preventDefault();
 				setIsDragOver(false);
 			}}
+			// Desktop-only component. Mobile path renders <OpenPdfButton> instead
+			// (drag-and-drop is meaningless on touch). The conditional render lives
+			// in page.tsx behind `isMobile`.
 			className="relative w-full text-center cursor-pointer select-none transition-all duration-200 border-2 border-dashed group"
 			style={{
 				borderRadius: "var(--radius-xl)",

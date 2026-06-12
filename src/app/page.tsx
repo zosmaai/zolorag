@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, AlertTriangle, LoaderCircle, X, XCircle } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
+import BottomSheet from "@/components/BottomSheet";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages, { type ChatMessageItem } from "@/components/ChatMessages";
 import DropZone from "@/components/DropZone";
@@ -12,6 +13,7 @@ import OpenPdfButton from "@/components/OpenPdfButton";
 import SetupPanel from "@/components/SetupPanel";
 import SourcePanel from "@/components/SourcePanel";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useKeyboardInset } from "@/hooks/useKeyboardInset";
 import type { IndexStatus, IndexSummary, PdfDocument, SearchResult } from "@/types";
 
 let messageIdCounter = 0;
@@ -22,6 +24,7 @@ function nextId(): string {
 
 export default function Home() {
 	const isMobile = useIsMobile();
+	const keyboardInset = useKeyboardInset();
 	const [currentDoc, setCurrentDoc] = useState<PdfDocument | null>(null);
 	const [setupComplete, setSetupComplete] = useState(false);
 	const [modelReady, setModelReady] = useState(false);
@@ -309,32 +312,54 @@ export default function Home() {
 
 	// -----------------------------------------------------------------------
 	return (
-		<div className="h-screen flex flex-col" style={{ background: "var(--bg-main)" }}>
-			{/* ── Header ── */}
+		<div
+			className="flex flex-col"
+			style={{
+				background: "var(--bg-main)",
+				// 100dvh tracks Android URL/keyboard chrome; 100vh fallback.
+				height: "100dvh",
+				minHeight: "100vh",
+			}}
+		>
+			{/* ── Header (responsive: compact on mobile) ── */}
 			<header
-				className="flex items-center justify-between shrink-0"
+				className="flex items-center justify-between shrink-0 safe-area-top"
 				style={{
 					background: "var(--bg-surface)",
 					borderBottom: "1px solid var(--border-default)",
-					padding: "var(--space-3) var(--space-5)",
+					padding: isMobile ? "var(--space-2) var(--space-4)" : "var(--space-3) var(--space-5)",
 				}}
 			>
 				<div className="flex items-center gap-3 min-w-0">
 					<Image
 						src="/zolorag-logo.png"
 						alt="ZoloRAG"
-						width={36}
-						height={36}
+						width={isMobile ? 30 : 36}
+						height={isMobile ? 30 : 36}
 						className="shrink-0"
 						style={{ borderRadius: "var(--radius-md)" }}
 					/>
 					<div className="min-w-0">
-						<h1 className="text-base font-semibold tracking-tight truncate" style={{ color: "var(--text-primary)" }}>
+						<h1
+							className="font-semibold tracking-tight truncate"
+							style={{
+								color: "var(--text-primary)",
+								fontSize: isMobile ? "15px" : "16px",
+							}}
+						>
 							ZoloRAG
 						</h1>
-						<p className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>
-							{currentDoc ? currentDoc.file_name : "Local PDF Chat"}
-						</p>
+						{/* Hide subtitle on mobile when a doc is loaded — saves vertical space */}
+						{!(isMobile && hasDocument) && (
+							<p className="text-xs truncate" style={{ color: "var(--text-secondary)" }}>
+								{currentDoc ? currentDoc.file_name : "Local PDF Chat"}
+							</p>
+						)}
+						{isMobile && hasDocument && currentDoc && (
+							<p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+								{currentDoc.file_name}
+							</p>
+						)}
 					</div>
 				</div>
 
@@ -348,22 +373,26 @@ export default function Home() {
 								style={{
 									color: "var(--text-accent)",
 									background: "var(--bg-accent-subtle)",
-									padding: "6px 14px",
+									padding: isMobile ? "10px 14px" : "6px 14px",
 									borderRadius: "var(--radius-md)",
+									minHeight: isMobile ? "40px" : undefined,
 								}}
 							>
-								Change PDF
+								{isMobile ? "Change" : "Change PDF"}
 							</button>
 							<button
 								type="button"
 								onClick={handleCloseDocument}
-								className="flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-150 hover:bg-hover active:scale-95"
+								aria-label="Close document"
+								className="flex items-center justify-center rounded-lg transition-all duration-150 hover:bg-hover active:scale-95"
 								style={{
 									color: "var(--text-muted)",
 									borderRadius: "var(--radius-md)",
+									width: isMobile ? "40px" : "32px",
+									height: isMobile ? "40px" : "32px",
 								}}
 							>
-								<X size={15} />
+								<X size={isMobile ? 18 : 15} />
 							</button>
 						</>
 					)}
@@ -383,7 +412,10 @@ export default function Home() {
 						/>
 					)}
 					{!hasDocument && setupComplete && (
-						<div className="flex-1 flex items-center justify-center" style={{ padding: "var(--space-10)" }}>
+						<div
+							className="flex-1 flex items-center justify-center"
+							style={{ padding: isMobile ? "var(--space-5)" : "var(--space-10)" }}
+						>
 							<div className="w-full" style={{ maxWidth: "440px" }}>
 								{loadError && (
 									<div
@@ -434,12 +466,19 @@ export default function Home() {
 								currentDocName={currentDoc?.file_name}
 							/>
 
-							{/* Input area */}
+							{/* Input area — keyboard-aware on mobile: padding-bottom grows by
+							    `keyboardInset` so the input sits just above the soft keyboard. */}
 							<div
 								style={{
-									padding: "var(--space-3) var(--space-5) var(--space-4)",
+									padding: isMobile
+										? "var(--space-3) var(--space-4) var(--space-4)"
+										: "var(--space-3) var(--space-5) var(--space-4)",
+									paddingBottom: isMobile
+										? `calc(var(--space-4) + ${keyboardInset}px + env(safe-area-inset-bottom, 0px))`
+										: "var(--space-4)",
 									background: "var(--bg-main)",
 									borderTop: "1px solid var(--border-subtle)",
+									transition: "padding-bottom 0.15s ease-out",
 								}}
 							>
 								{isIndexing ? (
@@ -508,8 +547,9 @@ export default function Home() {
 					)}
 				</div>
 
-				{/* Source panel */}
-				{sourcePage !== null && currentDoc && (
+				{/* Source view: sidebar on desktop, bottom sheet on mobile.
+				    Same data + callbacks; only the presentation differs. */}
+				{sourcePage !== null && currentDoc && !isMobile && (
 					<SourcePanel
 						document={currentDoc}
 						page={sourcePage}
@@ -518,6 +558,15 @@ export default function Home() {
 					/>
 				)}
 			</div>
+
+			{sourcePage !== null && currentDoc && isMobile && (
+				<BottomSheet
+					document={currentDoc}
+					page={sourcePage}
+					onClose={() => setSourcePage(null)}
+					onNavigate={handleSourceNavigate}
+				/>
+			)}
 		</div>
 	);
 }

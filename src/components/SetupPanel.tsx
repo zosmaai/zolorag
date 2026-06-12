@@ -5,6 +5,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Bot, CheckCircle2, Grid3x3, LoaderCircle, XCircle } from "lucide-react";
 import Image from "next/image";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useIsMobile } from "@/hooks/useIsMobile";
 
 interface DownloadProgress {
 	downloaded: number;
@@ -151,6 +152,7 @@ interface SetupPanelProps {
 }
 
 export default function SetupPanel({ onComplete }: SetupPanelProps) {
+	const isMobile = useIsMobile();
 	const [embedState, setEmbedState] = useState<ModelRowProps["state"]>("idle");
 	const [embedProgress, setEmbedProgress] = useState<DownloadProgress | undefined>();
 	const [embedError, setEmbedError] = useState<string | undefined>();
@@ -266,9 +268,12 @@ export default function SetupPanel({ onComplete }: SetupPanelProps) {
 	const allReady = embedState === "ready" && llmState === "ready";
 
 	return (
-		<div className="flex items-center justify-center min-h-full" style={{ padding: "var(--space-10)" }}>
+		<div
+			className="flex items-center justify-center min-h-full overflow-y-auto"
+			style={{ padding: isMobile ? "var(--space-6) var(--space-4)" : "var(--space-10)" }}
+		>
 			<div className="w-full" style={{ maxWidth: "480px" }}>
-				<div className="space-y-8">
+				<div className={isMobile ? "space-y-6" : "space-y-8"}>
 					{/* Logo + heading */}
 					<div className="text-center space-y-3">
 						<Image

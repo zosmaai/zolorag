@@ -3,6 +3,7 @@
 import { FileText, MessageCircle } from "lucide-react";
 import { useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import type { SearchResult } from "@/types";
 
 export interface ChatMessageItem {
@@ -45,6 +46,14 @@ function ThinkingDots() {
 
 export default function ChatMessages({ messages, isSearching, onResultClick, currentDocName }: ChatMessagesProps) {
 	const bottomRef = useRef<HTMLDivElement>(null);
+	const isMobile = useIsMobile();
+
+	// Mobile: tighter horizontal gutters, no oversized left/right indents
+	// so bubbles can use the full available width.
+	const containerPad = isMobile ? "var(--space-4) var(--space-4)" : "var(--space-4) var(--space-5)";
+	const userIndent = isMobile ? "var(--space-8)" : "var(--space-16)";
+	const assistantIndent = isMobile ? "var(--space-4)" : "var(--space-16)";
+	const userBubbleMax = isMobile ? "82%" : "65%";
 
 	// Auto-scroll to bottom
 	// biome-ignore lint/correctness/useExhaustiveDependencies: we want to scroll when messages change
@@ -77,13 +86,13 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 	}
 
 	return (
-		<div className="flex-1 overflow-y-auto" style={{ padding: "var(--space-4) var(--space-5)" }}>
+		<div className="flex-1 overflow-y-auto" style={{ padding: containerPad }}>
 			<div className="flex flex-col gap-5">
 				{messages.map((msg) => (
 					<div key={msg.id} className="animate-fade-in">
 						{/* ── User message ── */}
 						{msg.type === "user" && msg.query && (
-							<div className="flex justify-end" style={{ paddingLeft: "var(--space-16)" }}>
+							<div className="flex justify-end" style={{ paddingLeft: userIndent }}>
 								<div
 									className="text-sm leading-relaxed font-medium"
 									style={{
@@ -91,7 +100,7 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 										color: "white",
 										borderRadius: "18px 18px 4px 18px",
 										padding: "12px 20px",
-										maxWidth: "65%",
+										maxWidth: userBubbleMax,
 									}}
 								>
 									{msg.query}
@@ -101,7 +110,7 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 
 						{/* ── Assistant message ── */}
 						{msg.type === "assistant_llm" && (
-							<div className="flex flex-col gap-2.5" style={{ paddingRight: "var(--space-16)" }}>
+							<div className="flex flex-col gap-2.5" style={{ paddingRight: assistantIndent }}>
 								<div
 									className="text-sm leading-relaxed"
 									style={{
@@ -139,16 +148,18 @@ export default function ChatMessages({ messages, isSearching, onResultClick, cur
 												type="button"
 												key={source.chunk_id}
 												onClick={() => onResultClick(source)}
-												className="inline-flex items-center gap-1.5 text-xs font-medium transition-all duration-150 hover:opacity-80 active:scale-95"
+												className="inline-flex items-center gap-1.5 font-medium transition-all duration-150 hover:opacity-80 active:scale-95"
 												style={{
 													background: "var(--bg-accent-subtle)",
 													color: "var(--text-accent)",
 													border: "1px solid var(--border-accent-soft)",
 													borderRadius: "var(--radius-lg)",
-													padding: "5px 12px",
+													padding: isMobile ? "8px 14px" : "5px 12px",
+													fontSize: isMobile ? "13px" : "12px",
+													minHeight: isMobile ? "40px" : undefined,
 												}}
 											>
-												<FileText size={10} strokeWidth={2.5} />
+												<FileText size={isMobile ? 12 : 10} strokeWidth={2.5} />
 												Page {source.page}
 											</button>
 										))}
