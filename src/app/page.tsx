@@ -8,8 +8,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ChatInput from "@/components/ChatInput";
 import ChatMessages, { type ChatMessageItem } from "@/components/ChatMessages";
 import DropZone from "@/components/DropZone";
+import OpenPdfButton from "@/components/OpenPdfButton";
 import SetupPanel from "@/components/SetupPanel";
 import SourcePanel from "@/components/SourcePanel";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import type { IndexStatus, IndexSummary, PdfDocument, SearchResult } from "@/types";
 
 let messageIdCounter = 0;
@@ -19,6 +21,7 @@ function nextId(): string {
 }
 
 export default function Home() {
+	const isMobile = useIsMobile();
 	const [currentDoc, setCurrentDoc] = useState<PdfDocument | null>(null);
 	const [setupComplete, setSetupComplete] = useState(false);
 	const [modelReady, setModelReady] = useState(false);
@@ -130,6 +133,7 @@ export default function Home() {
 	}, [loadPdfByPath]);
 
 	// -----------------------------------------------------------------------
+	// Desktop drag-and-drop — ignored on mobile (no drag events on touch).
 	useEffect(() => {
 		let unlisten: Promise<() => void> | undefined;
 		const setup = async () => {
@@ -143,6 +147,24 @@ export default function Home() {
 		setup();
 		return () => {
 			unlisten?.then((fn) => fn());
+		};
+	}, [loadPdfByPath]);
+
+	// -----------------------------------------------------------------------
+	// Android intent bridge — MainActivity.kt calls window.__zoloragPdfIntent(uri)
+	// when the app is opened via “Open with” or “Share → ZoloRAG” for a PDF.
+	// Backend `load_pdf` resolves the content:// URI to a real path transparently.
+	useEffect(() => {
+		interface IntentWindow extends Window {
+			__zoloragPdfIntent?: (uri: string) => void;
+		}
+		const w = window as IntentWindow;
+		w.__zoloragPdfIntent = (uri: string) => {
+			console.info("[intent] PDF URI received:", uri);
+			loadPdfByPath(uri);
+		};
+		return () => {
+			w.__zoloragPdfIntent = undefined;
 		};
 	}, [loadPdfByPath]);
 
@@ -390,7 +412,14 @@ export default function Home() {
 										</button>
 									</div>
 								)}
-								<DropZone onBrowse={handleBrowse} />
+								{isMobile ? (
+									<OpenPdfButton onBrowse={handleBrowse} variant="primary" />
+								) : (
+									<div className="flex flex-col items-center">
+										<DropZone onBrowse={handleBrowse} />
+										<OpenPdfButton onBrowse={handleBrowse} variant="secondary" />
+									</div>
+								)}
 							</div>
 						</div>
 					)}

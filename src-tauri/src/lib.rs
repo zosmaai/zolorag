@@ -1,5 +1,7 @@
 pub mod index;
 pub mod ml;
+pub mod mobile;
+pub mod path_resolver;
 pub mod pdf;
 pub mod rag;
 
@@ -152,14 +154,33 @@ async fn init_llm_engine(app: tauri::AppHandle) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-fn load_pdf(path: String, state: State<AppState>) -> Result<PdfDocument, String> {
-    let doc = pdf::extract::extract_text(&path).map_err(|e| e.to_string())?;
+fn load_pdf(
+    path: String,
+    app: tauri::AppHandle,
+    state: State<AppState>,
+) -> Result<PdfDocument, String> {
+    // Resolve raw picker output → real filesystem path.
+    // No-op on desktop, content URI copy on Android.
+    let local_path = path_resolver::resolve_to_local_path(&path, &app)?;
+    let local_str = local_path.to_string_lossy();
+    log::info!("load_pdf: raw={path} resolved={local_str}");
+
+    let doc = pdf::extract::extract_text(&local_str).map_err(|e| e.to_string())?;
     let chunks = pdf::chunk::chunk_document(&doc);
 
     *state.current_document.lock().unwrap() = Some(doc.clone());
     *state.current_chunks.lock().unwrap() = chunks;
 
     Ok(doc)
+}
+
+/// Expose the resolver to the frontend.
+/// Useful when JS receives an intent URI and wants the real path before
+/// invoking `load_pdf` (or just for diagnostics).
+#[tauri::command]
+fn resolve_pdf_path(path: String, app: tauri::AppHandle) -> Result<String, String> {
+    path_resolver::resolve_to_local_path(&path, &app)
+        .map(|p| p.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -562,6 +583,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Phase 1
             load_pdf,
+            resolve_pdf_path,
             get_chunks,
             // Phase 2
             #[cfg(feature = "ml")]
