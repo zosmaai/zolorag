@@ -6,7 +6,7 @@
 	"author": "Shanvit Shetty",
 	"type": "module",
 	"scripts": {
-		"dev": "next dev",
+		"dev": "next dev -H 0.0.0.0",
 		"build": "next build",
 		"start": "next start",
 		"tauri": "tauri",
@@ -19,7 +19,7 @@
 		"builds:linux": "node scripts/check-platform.mjs linux && pnpm tauri build --bundles deb,appimage && node scripts/copy-builds.mjs linux",
 		"builds:win": "node scripts/check-platform.mjs windows && pnpm tauri build --bundles nsis && node scripts/copy-builds.mjs windows",
 		"builds": "pnpm tauri build && node scripts/copy-builds.mjs",
-		"android:dev": "tauri android dev",
+		"android:dev": "tauri android dev --host",
 		"android:build": "tauri android build --target aarch64"
 	},
 	"pnpm": {

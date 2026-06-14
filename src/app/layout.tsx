@@ -28,7 +28,12 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
 	return (
 		<html lang="en" className={chakra.variable}>
-			<body>{children}</body>
+			<body>
+				{/* HMR WebSocket fix — redirects "tauri.localhost" WebSocket
+				   connections to the dev server. See public/hmr-websocket-fix.js. */}
+				<script src="/hmr-websocket-fix.js" />
+				{children}
+			</body>
 		</html>
 	);
 }

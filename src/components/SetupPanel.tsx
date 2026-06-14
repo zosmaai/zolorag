@@ -115,20 +115,31 @@ function ModelRow({ label, icon, size, state, progress, error, onStart }: ModelR
 					{(state === "downloading" || state === "checking") && (
 						<div className="mt-4 space-y-1.5">
 							<div
-								className="w-full h-2 rounded-full overflow-hidden"
+								className="w-full h-2.5 rounded-full overflow-hidden"
 								style={{ background: "var(--bg-surface-raised)" }}
 							>
 								<div
-									className="h-full rounded-full transition-all duration-500 ease-out"
+									className={`h-full rounded-full ${state === "checking" || pct === 0 ? "animate-pulse" : ""}`}
 									style={{
-										width: `${state === "checking" ? 5 : Math.max(5, pct)}%`,
+										width: pct === 0 ? "12%" : `${pct}%`,
 										background: "var(--bg-accent)",
+										transition: "width 0.5s ease-out",
 									}}
 								/>
 							</div>
-							{progress && state === "downloading" && (
+							{progress && state === "downloading" && progress.downloaded > 0 && (
 								<p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
 									{fmtSize(progress.downloaded)} / {fmtSize(progress.total)} ({pct}%)
+								</p>
+							)}
+							{state === "checking" && !progress && (
+								<p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+									Starting...
+								</p>
+							)}
+							{state === "downloading" && progress && progress.downloaded === 0 && (
+								<p className="text-xs font-medium" style={{ color: "var(--text-muted)" }}>
+									Connecting...
 								</p>
 							)}
 						</div>
@@ -225,44 +236,52 @@ export default function SetupPanel({ onComplete }: SetupPanelProps) {
 		}
 	}, [embedState, llmState, onComplete]);
 
-	const startEmbed = useCallback(async () => {
+	// ── startEmbed / startLlm ──
+	//
+	// On Android, the Rust commands are SYNC (`fn`, not `async fn`) and spawn
+	// a `std::thread` for the actual download — see
+	// [[sources/android-sync-command-background-thread-pattern]].
+	// They return immediately; progress comes via `rag:download-progress`
+	// events, completion is detected by polling `check_model` /
+	// `check_llm_model` every 800 ms.
+	const startEmbed = useCallback(() => {
 		setEmbedState("checking");
 		setEmbedError(undefined);
-		try {
-			await invoke("init_candle_encoder");
-			// Progress events will set state to "downloading" automatically.
-			// After completion, check status to confirm.
-			// Poll for completion since hf-hub doesn't emit a "done" event
-			const poll = setInterval(async () => {
+		invoke("init_candle_encoder").catch((err: unknown) => {
+			setEmbedState("error");
+			setEmbedError(String(err));
+		});
+		const poll = setInterval(async () => {
+			try {
 				const s = await invoke<{ ready: boolean; message: string }>("check_model");
 				if (s.ready) {
 					clearInterval(poll);
 					setEmbedState("ready");
 				}
-			}, 500);
-		} catch (err) {
-			setEmbedState("error");
-			setEmbedError(String(err));
-		}
+			} catch {
+				/* keep polling */
+			}
+		}, 800);
 	}, []);
 
-	const startLlm = useCallback(async () => {
+	const startLlm = useCallback(() => {
 		setLlmState("checking");
 		setLlmError(undefined);
-		try {
-			await invoke("init_llm_engine");
-			// Poll for completion (init_llm_engine loads the model after download)
-			const poll = setInterval(async () => {
+		invoke("init_llm_engine").catch((err: unknown) => {
+			setLlmState("error");
+			setLlmError(String(err));
+		});
+		const poll = setInterval(async () => {
+			try {
 				const s = await invoke<{ ready: boolean; message: string }>("check_llm_model");
 				if (s.ready) {
 					clearInterval(poll);
 					setLlmState("ready");
 				}
-			}, 500);
-		} catch (err) {
-			setLlmState("error");
-			setLlmError(String(err));
-		}
+			} catch {
+				/* keep polling */
+			}
+		}, 800);
 	}, []);
 
 	const allReady = embedState === "ready" && llmState === "ready";
@@ -289,7 +308,7 @@ export default function SetupPanel({ onComplete }: SetupPanelProps) {
 								Welcome to ZoloRAG
 							</h1>
 							<p className="text-sm mt-2 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-								Download the required models to get started. Everything runs locally — no data leaves your machine.
+								Download the required models to get started. Everything runs locally — no data leaves your device.
 							</p>
 						</div>
 					</div>

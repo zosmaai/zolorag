@@ -136,7 +136,7 @@ pub fn download_llm_model(
 /// from there if available, avoiding re-download.
 ///
 /// Returns the model directory path on success.
-pub fn ensure_embedding_model(app_dir: &Path) -> Result<PathBuf, String> {
+pub fn ensure_embedding_model<F: FnMut(u64, u64)>(app_dir: &Path, mut on_progress: F) -> Result<PathBuf, String> {
     let model_dir = app_dir.join("models").join(EMBEDDING_REPO);
     std::fs::create_dir_all(&model_dir)
         .map_err(|e| format!("Cannot create models dir: {e}"))?;
@@ -200,7 +200,7 @@ pub fn ensure_embedding_model(app_dir: &Path) -> Result<PathBuf, String> {
         );
 
         log::info!("Downloading embedding model file: {}", filename);
-        download_file(&url, &dest, &mut |_, _| {})?;
+        download_file(&url, &dest, &mut on_progress)?;
     }
 
     // Write marker file
@@ -211,7 +211,13 @@ pub fn ensure_embedding_model(app_dir: &Path) -> Result<PathBuf, String> {
     Ok(model_dir)
 }
 
-/// Check if the embedding model has been downloaded.
+/// Check if the embedding model has been downloaded in a specific app directory.
+pub fn is_embedding_model_cached_in(app_dir: &Path) -> bool {
+    let model_dir = app_dir.join("models").join(EMBEDDING_REPO);
+    model_dir.join(".downloaded").exists()
+}
+
+/// Check if the embedding model has been downloaded in the old hf-hub cache location.
 pub fn is_embedding_model_cached() -> bool {
     let home = std::env::var("HOME").unwrap_or_default();
     let model_dir = PathBuf::from(&home)

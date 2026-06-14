@@ -20,7 +20,7 @@ CI must build and test **both** targets. Android-only CI leaves desktop regressi
 
 ## Key Decisions from M2 (Do Not Revert)
 
-- **No `cargo-ndk`** — Tauri calls plain `cargo build --target aarch64-linux-android`. The full NDK toolchain is declared in `src-tauri/.cargo/config.toml` `[env]` section. CI just needs the NDK installed at the correct path.
+- **No `cargo-ndk`** — Tauri calls plain `cargo build --target aarch64-linux-android`. The full NDK toolchain is declared in `.cargo/config.toml` `[env]` section. CI just needs the NDK installed at the correct path.
 - **No shell env var exports for CFLAGS/CXXFLAGS** — the Android POSIX_MADV fix lives in the **vendored** `vendor/llama-cpp-sys-2/` (wired via `[patch.crates-io]`), not in env vars. `.cargo/config.toml` additionally `force`-empties `CFLAGS_aarch64_linux_android` for defence in depth.
 - **No setup script** — `git clone` is enough. The vendor dir is checked in; cargo picks it up via the `[patch.crates-io]` block in `src-tauri/Cargo.toml`.
 - **NDK version**: `29.0.14206865` — this is what `.cargo/config.toml` references. CI must install this exact version.
@@ -69,7 +69,7 @@ CI must build and test **both** targets. Android-only CI leaves desktop regressi
 - [ ] `pnpm tauri android build --apk` — produces unsigned APK
 - [ ] APK path: `src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`
 - [ ] Version name: read from `Cargo.toml` + short commit SHA suffix
-- [ ] **If `pnpm tauri android dev` is still broken (M2 deferred)**: use direct `cargo build --target aarch64-linux-android --lib --release` + Gradle APK assembly as a fallback
+- [ ] **Note**: `pnpm tauri android dev` is fully working (M2 resolved + React/HMR/hydration fixed 2026-06-14). The fallback is no longer needed.
 
 ### 5. Android APK Signing
 
@@ -149,7 +149,7 @@ Since `.cargo/config.toml` uses `force = false`, shell env takes precedence over
 
 Local builds use stock Tauri CLI — the wrapper scripts that existed during M2
 have been removed. All state lives in version-controlled files
-(`src-tauri/.cargo/config.toml`, `src-tauri/Cargo.toml` `[patch.crates-io]`,
+(`.cargo/config.toml`, `src-tauri/Cargo.toml` `[patch.crates-io]`,
 `vendor/llama-cpp-sys-2/`).
 
 ```bash
@@ -200,7 +200,7 @@ pnpm tauri build
 | `cargo update` bumps `llama-cpp-2` to a version requiring a newer `llama-cpp-sys-2` | Medium | Android | Re-vendor `llama-cpp-sys-2` at the new version, re-apply the `__ANDROID__` guard in `llama.cpp/src/llama-mmap.cpp`, commit. Catch via CI build. |
 | macOS CI runner is Apple Silicon but keystore signed on Intel | Low | Desktop | Use universal binary or pin to `macos-latest` |
 | GitHub Actions cache evicted (10 GB limit) | Low | Both | Monitor cache size; evict Android target cache first |
-| `pnpm tauri android dev` emulator detection (from M2) | Medium | Android | Use `tauri android build` (not `dev`) in CI — this is unaffected |
+| `pnpm tauri android dev` emulator detection (from M2) | ✅ Resolved | Android | N/A — fixed in M2 (ANDROID_HOME pointing at partial SDK) + React/HMR/hydration issues resolved in 2026-06-14 |
 
 ---
 

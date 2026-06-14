@@ -57,7 +57,7 @@ fn ensure_encoder(app: &tauri::AppHandle, state: &AppState) -> Result<(), String
     drop(guard); // release lock before loading
     log::info!("Checking embedding model (may download if not cached)...");
     let _ = app.emit("rag:embedding-status", "Checking embedding model...");
-    let model_dir = ml::download::ensure_embedding_model(&app_dir)?;
+    let model_dir = ml::download::ensure_embedding_model(&app_dir, |_, _| {})?;
     log::info!("Loading CandleEncoder from {:?}", model_dir);
     let _ = app.emit("rag:embedding-status", "Loading model...");
     let encoder = CandleEncoder::new(&model_dir)?;
@@ -88,10 +88,74 @@ fn encode_with_auto_load(
 
 #[cfg(feature = "ml")]
 #[tauri::command]
-async fn init_candle_encoder(app: tauri::AppHandle) -> Result<(), String> {
-    let state = app.state::<AppState>();
-    ensure_encoder(&app, &state)?;
-    log::info!("CandleEncoder initialized and activated");
+fn init_candle_encoder(app: tauri::AppHandle) -> Result<(), String> {
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Cannot resolve app data dir: {e}"))?;
+
+    // ── If model files already on disk, load into memory now (fast) ──
+    if ml::download::is_embedding_model_cached_in(&app_dir) {
+        // Check if already loaded in memory
+        {
+            let state = app.state::<AppState>();
+            let guard = state.candle_encoder.lock().map_err(|e| e.to_string())?;
+            if guard.is_some() {
+                log::info!("CandleEncoder already initialized");
+                return Ok(());
+            }
+        }
+        let model_dir = ml::download::ensure_embedding_model(&app_dir, |_, _| {})?;
+        let encoder = CandleEncoder::new(&model_dir)?;
+        *app.state::<AppState>()
+            .candle_encoder
+            .lock()
+            .map_err(|e| e.to_string())? = Some(encoder);
+        log::info!("CandleEncoder loaded from app cache");
+        let _ = app.emit("rag:embedding-ready", true);
+        return Ok(());
+    }
+
+    // ── Emit immediate progress event from MAIN thread so frontend ──
+    //    instantly shows a progress bar (12% initial width) before
+    //    the background thread even starts connecting.
+    let _ = app.emit(
+        "rag:download-progress",
+        serde_json::json!({
+            "downloaded": 0,
+            "total": 1,
+            "model": "embedding",
+        }),
+    );
+
+    // ── Download in background thread (never touches AppState) ──
+    let app_handle = app.clone();
+    let app_dir_for_thread = app_dir.clone();
+
+    std::thread::spawn(move || {
+        match ml::download::ensure_embedding_model(&app_dir_for_thread, |downloaded, total| {
+            let _ = app_handle.emit(
+                "rag:download-progress",
+                serde_json::json!({
+                    "downloaded": downloaded,
+                    "total": total,
+                    "model": "embedding",
+                }),
+            );
+        }) {
+            Ok(_) => {
+                log::info!("Embedding model files on disk — ready for lazy load");
+                // Files are on disk. Frontend detects via check_model polling.
+                // Model loads lazily via ensure_encoder() on first encode call.
+                let _ = app_handle.emit("rag:embedding-ready", true);
+            }
+            Err(e) => {
+                log::error!("Failed to download embedding model: {e}");
+                let _ = app_handle.emit("rag:embedding-error", e);
+            }
+        }
+    });
+
     Ok(())
 }
 
@@ -195,21 +259,37 @@ fn get_chunks(state: State<AppState>) -> Result<Vec<Chunk>, String> {
 
 #[cfg(feature = "ml")]
 #[tauri::command]
-async fn check_model(app: tauri::AppHandle) -> Result<ModelStatus, String> {
-    // Check if candle encoder is already loaded
-    let engine_loaded = {
+fn check_model(app: tauri::AppHandle) -> Result<ModelStatus, String> {
+    // Check if candle encoder is already loaded in-process
+    {
         let state = app.state::<AppState>();
         let guard = state.candle_encoder.lock().map_err(|e| e.to_string())?;
-        guard.is_some()
+        if guard.is_some() {
+            return Ok(ModelStatus {
+                ready: true,
+                message: "Embedding model ready (in-process)".to_string(),
+            });
+        }
+    }
+
+    // Check app data directory (where models are stored on Android & desktop)
+    let app_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Cannot resolve app data dir: {e}"))?;
+
+    let in_app_dir = ml::download::is_embedding_model_cached_in(&app_dir);
+
+    // Also check legacy hf-hub cache location (desktop only)
+    let in_hf_cache = if !in_app_dir {
+        ml::download::is_embedding_model_cached()
+    } else {
+        false
     };
 
-    let cached = ml::download::is_embedding_model_cached();
-
     Ok(ModelStatus {
-        ready: cached || engine_loaded,
-        message: if engine_loaded {
-            "Embedding model ready (in-process)".to_string()
-        } else if cached {
+        ready: in_app_dir || in_hf_cache,
+        message: if in_app_dir || in_hf_cache {
             "Embedding model files cached".to_string()
         } else {
             "Embedding model not yet downloaded".to_string()
@@ -219,9 +299,9 @@ async fn check_model(app: tauri::AppHandle) -> Result<ModelStatus, String> {
 
 #[cfg(feature = "ml")]
 #[tauri::command]
-async fn pull_embedding_model(app: tauri::AppHandle) -> Result<(), String> {
+fn pull_embedding_model(app: tauri::AppHandle) -> Result<(), String> {
     // Delegate to init_candle_encoder which handles download + load
-    init_candle_encoder(app).await
+    init_candle_encoder(app)
 }
 
 #[cfg(feature = "ml")]

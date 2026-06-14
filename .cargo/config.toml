@@ -5,18 +5,25 @@ ar     = "/opt/homebrew/bin/x86_64-w64-mingw32-ar"
 
 # ─── Android cross-compilation ────────────────────────────────────────────────
 #
+# IMPORTANT: this file MUST live at the project root (NOT src-tauri/.cargo/).
+# Tauri's Android Gradle plugin (see src-tauri/gen/android/buildSrc/.../
+# BuildTask.kt) invokes `pnpm tauri ...` with workingDir = project root, and
+# Cargo's config lookup walks up from CWD — not from --manifest-path. A config
+# inside src-tauri/ is invisible to gradle-driven builds, so the `+fp16`
+# rustflag silently goes missing and gemm-f16 debug builds fail with
+# `instruction requires: fullfp16`. A root-level config is also visible to
+# direct `cd src-tauri && cargo build` invocations, so both work.
+#
 # Tauri's android subcommand calls `cargo build --target aarch64-linux-android`
 # directly (it does NOT use cargo-ndk), so the full toolchain must be wired up
-# here in cargo's config. With this file in place,
+# here. With this file in place,
 #
 #     pnpm tauri android dev
 #     pnpm tauri android build
 #
-# work from any clean shell — no wrapper scripts, no exported env vars, no
-# registry patching. The only out-of-tree requirement is that `ANDROID_HOME`
-# and `NDK_HOME` (or `ANDROID_NDK_HOME`) are exported in your shell so that
-# the Tauri CLI itself (which reads them for adb / emulator detection) is
-# happy. The cargo toolchain below uses absolute paths and ignores them.
+# work from any clean shell — no wrapper scripts, no exported env vars beyond
+# ANDROID_HOME and NDK_HOME (which the Tauri CLI itself needs for adb /
+# emulator detection). The cargo toolchain below uses absolute paths.
 #
 # NDK version: bump the four absolute paths below if you upgrade the NDK.
 

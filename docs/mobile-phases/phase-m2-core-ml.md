@@ -13,9 +13,9 @@ These blockers were discovered during M1 and are the primary work of M2. As of
 
 | Blocker | Root Cause | Fix (current) |
 |---------|------------|---------------|
-| ✅ **gemm-f16 FP16 crash** | `#[target_feature(enable = "fp16")]` inline asm in `gemm-common` | `rustflags = ["-C", "target-feature=+fp16"]` in `src-tauri/.cargo/config.toml` for `[target.aarch64-linux-android]` |
+| ✅ **gemm-f16 FP16 crash** | `#[target_feature(enable = "fp16")]` inline asm in `gemm-common` | `rustflags = ["-C", "target-feature=+fp16"]` in `.cargo/config.toml` for `[target.aarch64-linux-android]` |
 | ✅ **llama.cpp POSIX_MADV** | Android Bionic libc doesn't define `posix_madvise()` or `POSIX_MADV_*` | **Vendored fork** at `vendor/llama-cpp-sys-2/` (checked in, 22 MB) with a minimal `__ANDROID__` guard in `llama.cpp/src/llama-mmap.cpp`. Pulled in via `[patch.crates-io]` in `src-tauri/Cargo.toml`. **No registry mutation, no setup script.** |
-| ✅ **NDK / CC / CXX / AR / linker wiring** | Tauri calls plain `cargo build --target aarch64-linux-android` (not `cargo-ndk`) so cc-rs / cmake need explicit toolchain config | `src-tauri/.cargo/config.toml` `[env]` + `[target.aarch64-linux-android]`. Zero shell env vars required. |
+| ✅ **NDK / CC / CXX / AR / linker wiring** | Tauri calls plain `cargo build --target aarch64-linux-android` (not `cargo-ndk`) so cc-rs / cmake need explicit toolchain config | `.cargo/config.toml` `[env]` + `[target.aarch64-linux-android]`. Zero shell env vars required. |
 | ✅ **Stale `CFLAGS` / `CXXFLAGS` poisoning cmake** | Old `-Dposix_madvise(...)` workaround had been ad-hoc exported in shells | `CFLAGS_aarch64_linux_android = { value = "", force = true }` in `.cargo/config.toml` overrides any inherited value for the Android target only. |
 | ✅ **`pnpm tauri android dev` emulator detection** | `ANDROID_HOME` previously pointed at a partial Android-Studio SDK with no `platform-tools/adb` | User's `~/.zshrc` must export `ANDROID_HOME=/opt/homebrew/share/android-commandlinetools` and `NDK_HOME=$ANDROID_HOME/ndk/<version>`. Boot the emulator with Android Studio or `emulator -avd <name> &`, then `pnpm tauri android dev`. No wrapper script. |
 
@@ -42,15 +42,13 @@ Once M2 is complete, `pnpm tauri android dev` becomes usable since the `ml` feat
 ### 0b. Permanent POSIX_MADV + Full Android Toolchain Config ✅ COMPLETE
 - [x] **`scripts/setup-android.sh` created**: Patches `llama-cpp-sys-2` in `~/.cargo/registry/` once. Idempotent, safe to re-run after `cargo update`. Now also pre-flights `CFLAGS`/`CXXFLAGS`, `ANDROID_HOME` completeness, and `ANDROID_NDK` before patching — refuses to silently run with a poisoned env.
 - [x] **No vendor/ in git**: `vendor/` gitignored, registry patch is the source of truth.
-- [x] **`src-tauri/.cargo/config.toml` is the single source of truth** for the full Android toolchain:
+- [x] **`.cargo/config.toml` is the single source of truth** for the full Android toolchain:
   - `ANDROID_NDK` / `NDK_ROOT` / `ANDROID_NDK_ROOT` → llama-cpp-sys-2 build.rs
   - `CC_aarch64_linux_android` / `CXX_aarch64_linux_android` / `AR_aarch64_linux_android` → cc-rs
   - `[target.aarch64-linux-android] linker` → rustc link step
   - `rustflags = +fp16` → gemm-f16
 - [x] **Zero shell env vars needed**: plain `cargo build --target aarch64-linux-android --lib --release` succeeds in 4m 01s with NO env vars in shell. Re-verified 2026-06-12 after `~/.zshrc` cleanup.
 - [x] **`pnpm tauri android dev` fixed**: see Task 8 — fixed by repointing `ANDROID_HOME` to the complete homebrew SDK and unsetting stale `CFLAGS`/`CXXFLAGS`. Wrapper: `scripts/android-dev.sh`.
-- [x] **Root cause of CFLAGS poison fully tracked down**: `~/.zshrc` did not export them, but a previous interactive shell session had `export CFLAGS=...` ad-hoc and the values survived into pi's bash subshells. Fix: `unset CFLAGS CXXFLAGS` added to the bottom of `~/.zshrc`, and `setup-android.sh`/`android-dev.sh`/`build-android.sh` all `unset` them defensively. DO NOT set them — parentheses in `-Dposix_madvise(...)` break cmake on macOS.
-- [x] **Old `scripts/build-android.sh` CFLAGS hack removed**: the script was still re-exporting the poisoned `CFLAGS`/`CXXFLAGS` (contradicting the docs). Rewritten to `unset` them, verify the registry patch, verify `ANDROID_HOME`, then call Tauri.
 
 ### 1. Cross-Compile candle with tokenizers
 - [x] candle-core, candle-nn, candle-transformers, tokenizers compiled successfully for Android
@@ -95,22 +93,19 @@ Once M2 is complete, `pnpm tauri android dev` becomes usable since the `ml` feat
 - [x] **Breakdown**: Model data (mmap'd) ~1918 MB, KV cache 112 MB, compute buffer 262.5 MB, actual RSS much lower due to mmap
 - [x] **Documented**: See `src-tauri/src/bin/mem_profile.rs` for the profiler tool
 
-### 8. Verify `pnpm tauri android dev` ✅ FIXED (2026-06-12)
+### 8. Verify `pnpm tauri android dev` ✅ FULLY WORKING (2026-06-14)
 - [x] **Release APK build confirmed**: 39 MB `zolorag-ml.apk` with ML support
 - [x] `cargo build --target aarch64-linux-android --lib --release` **succeeds standalone** (4m 01s release, zero shell env vars beyond `ANDROID_HOME`/`ANDROID_NDK` — the rest is in `.cargo/config.toml`)
 - [x] **`.cargo/config.toml` is the single source of truth** for cargo: NDK, CC, CXX, AR, linker, `+fp16` rustflag.
 - [x] **Tauri emulator detection fixed**. Two distinct root causes were collapsed into one symptom:
   1. **Split-brain SDK.** `~/Library/Android/sdk/` only contained `cmdline-tools/` + `ndk/` (Android Studio default), no `platform-tools/`, no `emulator/`. `~/.zshrc` exported `ANDROID_HOME=$HOME/Library/Android/sdk`, so Tauri looked at `$ANDROID_HOME/platform-tools/adb` → missing → "No available Android Emulator detected". The complete SDK lives at `/opt/homebrew/share/android-commandlinetools/`. Fixed by pointing `ANDROID_HOME` and `ANDROID_SDK_ROOT` to the homebrew SDK.
   2. **Stale CFLAGS/CXXFLAGS in the parent shell.** The old `-Dposix_madvise(addr,len,advice)=madvise(...)` workaround had been exported ad-hoc and never `unset`, so the parens kept landing in llama-cpp-sys-2's cmake invocation and producing "build script failed, must exit now". Fixed by adding `unset CFLAGS CXXFLAGS` to `~/.zshrc` and to every Android script.
-- [x] **One-command wrapper**: `scripts/android-dev.sh`
-  - `unset CFLAGS CXXFLAGS`
-  - Pins `ANDROID_HOME` to `/opt/homebrew/share/android-commandlinetools`
-  - Auto-detects `ANDROID_NDK` under `$ANDROID_HOME/ndk/`
-  - Re-applies the POSIX_MADV registry patch if missing
-  - `pkill` stray adb servers, restarts a single canonical one from `$ANDROID_HOME/platform-tools/adb`
-  - If no device is online, boots a Pixel AVD (`-no-snapshot-load`) and waits for `sys.boot_completed=1`
-  - Then `pnpm tauri android dev` with `PATH` prefixed so child processes hit the same `adb`
-- [x] **Verified end-to-end on emulator-5554**: adb under the canonical SDK sees the running emulator, `boot_completed=1`, `cargo build --target aarch64-linux-android --lib --release` succeeds in 4m 01s in the same env that `android-dev.sh` constructs.
+- [x] **React hydration / HMR / progress bar issues resolved (2026-06-14):**
+  - **Chunk loading** fixed via `--host` flag (sets `TAURI_DEV_HOST`) + CORS headers in `next.config.ts`
+  - **HMR WebSocket** fixed via inline `<script>` in `layout.tsx` that patches `window.WebSocket` to redirect `tauri.localhost` → dev server LAN IP
+  - **Hydration mismatch** fixed by deferring `useIsMobile()` media-query computation to post-hydration `useEffect`
+  - **Progress bar** fixed by using computed `pct` variable instead of hardcoded `"12%"` width
+  - All verified: app loads, React hydrates, models download with animated progress bar, chat thread works.
 
 ---
 
@@ -180,7 +175,7 @@ M2 is **complete** when:
 - LLM on-device: coherent output, model loads in 1.89s ✅
 - Memory: 1.39 GB peak RSS, well within limits ✅
 - `spawn_blocking` threading: implemented ✅
-- `src-tauri/.cargo/config.toml`: full self-contained Android toolchain (NDK, CC, CXX, AR, linker, +fp16, `force`-empty `CFLAGS_aarch64_linux_android`) ✅
+- `.cargo/config.toml`: full self-contained Android toolchain (NDK, CC, CXX, AR, linker, +fp16, `force`-empty `CFLAGS_aarch64_linux_android`) ✅
 - `vendor/llama-cpp-sys-2/`: pre-patched POSIX_MADV fix, wired via `[patch.crates-io]` in `src-tauri/Cargo.toml` ✅
 - **All wrapper scripts deleted**: `scripts/{setup,android-dev,build}-android.sh` and `patches/` are gone. Workflow is stock Tauri CLI ✅
 - `~/.zshrc` only needs to export `ANDROID_HOME=/opt/homebrew/share/android-commandlinetools` and `NDK_HOME=$ANDROID_HOME/ndk/<version>` ✅

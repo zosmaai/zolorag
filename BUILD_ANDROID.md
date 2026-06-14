@@ -16,7 +16,7 @@
 
 > `cargo-ndk` is **not** required — Tauri's android subcommand calls
 > `cargo build --target aarch64-linux-android` directly, and the full toolchain
-> is configured in `src-tauri/.cargo/config.toml`.
+> is configured in `.cargo/config.toml`.
 
 ### Environment Variables
 
@@ -86,7 +86,7 @@ This creates `src-tauri/gen/android/` with the Android Studio project.
 ## Building
 
 Stock Tauri CLI — no wrapper scripts, no exported `CFLAGS`/`CXXFLAGS`,
-no `cargo-ndk`. All cross-compile config lives in `src-tauri/.cargo/config.toml`.
+no `cargo-ndk`. All cross-compile config lives in `.cargo/config.toml`.
 
 ### Dev (live-reload on emulator or attached device)
 
@@ -95,8 +95,13 @@ no `cargo-ndk`. All cross-compile config lives in `src-tauri/.cargo/config.toml`
 $ANDROID_HOME/emulator/emulator -avd Pixel_7_API34 &
 
 # 2. Run
-pnpm tauri android dev           # or: pnpm android:dev
+pnpm android:dev
 ```
+
+> **Always use `pnpm android:dev`** (the npm script adds `--host`
+> so Tauri detects your LAN IP. Without `--host`, `TAURI_DEV_HOST` is unset,
+> Next.js's `assetPrefix` falls back to `localhost`, and the emulator resolves
+> `localhost` to itself — not your Mac — causing JS chunks to fail.
 
 ### Release APK
 
@@ -197,10 +202,16 @@ adb logcat --pid=$(adb shell pidof com.zosmaai.zolorag) -v time
 
 ### Debug Build with Hot-Reload
 
-Once ML crates compile for Android (see M2 status):
 ```bash
-pnpm tauri android dev
+pnpm android:dev
 ```
+
+> The `--host` flag (baked into the `android:dev` npm script) lets Tauri
+> detect your LAN IP and set `TAURI_DEV_HOST`. Without it, JS chunks point
+> to the emulator's own `localhost` and fail to load.
+
+Once ML crates compile for Android (see M2 status), the above command starts
+Next.js, compiles the Rust lib, deploys the debug APK, and wires live-reload
 
 This runs the frontend dev server and deploys the debug APK. File changes trigger hot-reload for both Rust and frontend code.
 

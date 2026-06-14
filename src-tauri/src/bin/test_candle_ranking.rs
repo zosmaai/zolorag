@@ -45,7 +45,7 @@ fn main() -> Result<(), String> {
     if !model_dir.exists() {
         // Fall back to the ensure function which downloads if needed
         let app_dir = PathBuf::from(&home).join(".cache").join("zolo-rag");
-        zolo_rag_lib::ml::download::ensure_embedding_model(&app_dir)?;
+        zolo_rag_lib::ml::download::ensure_embedding_model(&app_dir, |_, _| {})?;
     }
     let candle = CandleEncoder::new(&model_dir)?;
     println!("   ✅ CandleEncoder ready\n");
